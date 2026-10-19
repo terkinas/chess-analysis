@@ -1,6 +1,6 @@
 import { getPrisma, isUniqueViolation } from "../../lib/db";
 import { GAME_ID_PATTERN, parseSaveRequest } from "../../lib/game-record";
-import { getOwnerKey } from "../../lib/owner-key";
+import { ensureOwner, findOwnerKey } from "../../lib/owner-key";
 
 const PAGE_SIZE = 20;
 
@@ -21,8 +21,10 @@ const STORED_GAME_SELECT = {
   clockIncrementSeconds: true,
 } as const;
 
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: PRIVATE });
+function json(body: unknown, status = 200, setCookie?: string): Response {
+  const headers = new Headers(PRIVATE);
+  if (setCookie) headers.append("Set-Cookie", setCookie);
+  return Response.json(body, { status, headers });
 }
 
 function unavailable(error: unknown): Response {
@@ -39,7 +41,9 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
-    const ownerKey = getOwnerKey(request);
+    // No visitor cookie means no history yet; nothing to look up.
+    const ownerKey = findOwnerKey(request);
+    if (!ownerKey) return json({ games: [], nextCursor: null });
     const rows = await getPrisma().game.findMany({
       where: { ownerKey },
       orderBy: [{ playedAt: "desc" }, { id: "desc" }],
@@ -56,7 +60,8 @@ export async function GET(request: Request): Promise<Response> {
   }
 }
 
-// Saves a finished game for the caller. The same id can be posted again (for
+// Saves a finished game for the caller. A first-time visitor gets their visitor
+// cookie here, the moment they have something to keep. The same id can be posted again (for
 // example when an undo after checkmate leads to a different ending) and
 // replaces the caller's row. An id that already belongs to someone else is
 // refused, and never touches their row.
@@ -76,7 +81,7 @@ export async function POST(request: Request): Promise<Response> {
 
   const { id, ...data } = parsed.record;
   try {
-    const ownerKey = getOwnerKey(request);
+    const { ownerKey, setCookie } = ensureOwner(request);
     const games = getPrisma().game;
     const replaceOwn = async () =>
       (await games.updateMany({ where: { id, ownerKey }, data: { ...data, playedAt: now } })).count;
@@ -93,8 +98,10 @@ export async function POST(request: Request): Promise<Response> {
         saved = await replaceOwn();
       }
     }
-    if (saved === 0) return json({ error: "Game id already in use." }, 409);
-    return json({ id });
+    if (saved === 0) {
+      return json({ error: "Game id already in use." }, 409, setCookie);
+    }
+    return json({ id }, 200, setCookie);
   } catch (error) {
     return unavailable(error);
   }

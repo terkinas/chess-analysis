@@ -1,6 +1,6 @@
 import { getPrisma } from "../../../lib/db";
 import { GAME_ID_PATTERN } from "../../../lib/game-record";
-import { getOwnerKey } from "../../../lib/owner-key";
+import { findOwnerKey } from "../../../lib/owner-key";
 
 // Deleting a game that is already gone still succeeds, so a retry is harmless.
 // Only the caller's own games can be deleted; someone else's id deletes nothing
@@ -14,8 +14,11 @@ export async function DELETE(
     return Response.json({ error: "Invalid game id." }, { status: 400 });
   }
   try {
-    const ownerKey = getOwnerKey(request);
-    await getPrisma().game.deleteMany({ where: { id, ownerKey } });
+    // Without a visitor cookie there is nothing of theirs to delete.
+    const ownerKey = findOwnerKey(request);
+    if (ownerKey) {
+      await getPrisma().game.deleteMany({ where: { id, ownerKey } });
+    }
     return new Response(null, {
       status: 204,
       headers: { "Cache-Control": "private, no-store" },

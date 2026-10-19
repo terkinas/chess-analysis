@@ -39,10 +39,10 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 Finished games against Stockfish are saved to PostgreSQL and listed on the
 History page (`/history`), where each one can be opened in Analysis, downloaded
-as PGN or deleted. There are no accounts: each visitor's history is kept under a key derived from
-their IP address, so people on different networks never see each other's games.
-Only a keyed hash of the address is stored (never the address), and every query
-in `app/api/games` is filtered by it.
+as PGN or deleted. There are no accounts: each browser gets an anonymous, signed visitor cookie
+(`gambit_vid`, HttpOnly, set when its first game is saved) and its history is
+kept under a keyed hash of that id, so nobody sees anybody else's games. Only
+the hash is stored, and every query in `app/api/games` is filtered by it.
 
 Setup:
 
@@ -54,15 +54,14 @@ npm run db:generate         # generates the Prisma client into app/generated/pri
 npm run dev
 ```
 
-- Set `HISTORY_OWNER_SECRET` in `.env` (required in production) and, behind a
-  proxy that sets a dedicated client-IP header, `CLIENT_IP_HEADER`; see
-  `.env.example`. The proxy must overwrite (not pass through) that header, or
-  visitors could claim someone else's address.
+- Set `HISTORY_OWNER_SECRET` in `.env` (required in production); see
+  `.env.example`.
 - Put `DATABASE_URL` in `.env` (not only `.env.local`): the Prisma CLI reads `.env`.
 - On a server, apply committed migrations with `npm run db:deploy`.
-- People behind the same public IP (a household, an office) share one history,
-  and a visitor whose IP changes starts a new one. Games saved before ownership
-  existed have an empty `ownerKey` and are shown to nobody.
+- History belongs to the browser: it follows the same browser across network
+  changes, but clearing cookies, private windows and other devices or browsers
+  start a new, empty history. Games saved before ownership existed (empty
+  `ownerKey`), or while it was keyed by IP address, are shown to nobody.
 - The schema is `prisma/schema.prisma`; the API is `app/api/games`. The server
   replays the submitted moves with chess.js and works out the result and PGN
   itself, so it never stores an illegal game or a made-up result.

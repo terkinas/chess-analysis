@@ -29,7 +29,7 @@ export default function SiteHeader({ current }: SiteHeaderProps) {
           href="/"
           className="rounded-sm text-lg font-semibold tracking-tight text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
-          Terchess
+          Gambit
           <span className="text-accent">.</span>
         </Link>
 

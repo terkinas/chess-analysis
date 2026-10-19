@@ -48,8 +48,8 @@ model Game {
   /// 0 means the game was untimed.
   clockMinutes          Int
   clockIncrementSeconds Int
-  /// Who the game belongs to: a keyed hash of the player's IP address (see
-  /// app/lib/client-ip.ts), never the address itself. Every query filters on it.
+  /// Who the game belongs to: a keyed hash of the visitor id in their cookie
+  /// (see app/lib/visitor-id.ts), never the id itself. Every query filters on it.
   /// Games saved before this column existed have "" and are listed for nobody.
   ownerKey              String      @default("")
 
