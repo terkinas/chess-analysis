@@ -54,6 +54,11 @@ npm run db:generate         # generates the Prisma client into app/generated/pri
 npm run dev
 ```
 
+- `npm install` also runs `prisma generate` (the `postinstall` script), because the
+  generated client in `app/generated/prisma` is git-ignored and must exist before
+  `next build`. On Vercel, set `DATABASE_URL` and `HISTORY_OWNER_SECRET` for the
+  environments you deploy (Prisma reads `DATABASE_URL` while generating), and
+  apply the migrations to the production database once with `npm run db:deploy`.
 - Set `HISTORY_OWNER_SECRET` in `.env` (required in production); see
   `.env.example`.
 - Put `DATABASE_URL` in `.env` (not only `.env.local`): the Prisma CLI reads `.env`.
