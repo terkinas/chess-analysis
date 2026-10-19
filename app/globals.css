@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --background: #17181a;
+  --foreground: #e8e6df;
+
+  /* Live board colours. These are the defaults; AppearanceSync overrides them
+     from the saved settings. Keep in step with DEFAULT_BOARD_PRESET. */
+  --board-light: #ebe6d3;
+  --board-dark: #6a8a6e;
+  --board-light-ink: #4d6a52;
+  --board-dark-ink: #ebe6d3;
 }
 
 @theme inline {
@@ -10,17 +18,38 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Surfaces and text */
+  --color-surface: #1e2023;
+  --color-line: #2f3236;
+  --color-muted: #8c9094;
+
+  /* Board */
+  --color-board-light: #ebe6d3;
+  --color-board-dark: #6a8a6e;
+  --color-board-light-ink: #4d6a52;
+  --color-board-dark-ink: #ebe6d3;
+  --color-board-select: #f2cd4c;
+  /* Last move: a cool tint, so it never reads as the warm selection colour. */
+  --color-board-last: #5f9fd6;
+
+  /* Squares follow the user's board theme (see :root above); the
+     --color-board-light/dark tokens stay fixed for non-board UI chips. */
+  --color-square-light: var(--board-light);
+  --color-square-dark: var(--board-dark);
+  --color-square-light-ink: var(--board-light-ink);
+  --color-square-dark-ink: var(--board-dark-ink);
+
+  /* Accent */
+  --color-accent: #7f9f82;
+  --color-accent-hover: #8fb092;
+
+  /* Low time / flagged clock */
+  --color-danger: #e0735f;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
 }

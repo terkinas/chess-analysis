@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+<title>White king</title>
+<defs>
+<linearGradient id="body" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#DDD2BA"/><stop offset="0.3" stop-color="#FFFCF2"/><stop offset="0.62" stop-color="#F1E9D8"/><stop offset="1" stop-color="#B8AC93"/></linearGradient>
+<linearGradient id="diag" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#FFFCF2"/><stop offset="0.45" stop-color="#F1E9D8"/><stop offset="1" stop-color="#B8AC93"/></linearGradient>
+<radialGradient id="ball" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#FFFCF2"/><stop offset="0.5" stop-color="#F1E9D8"/><stop offset="1" stop-color="#B8AC93"/></radialGradient>
+<radialGradient id="shadow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#000" stop-opacity="0.38"/><stop offset="0.65" stop-color="#000" stop-opacity="0.16"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+</defs>
+<ellipse cx="53" cy="92.5" rx="41" ry="4.3" fill="url(#shadow)"/>
+<g stroke="#292D2C" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+<path d="M35.18 48 C35.18 60 30.62 68 27.2 76.5 H72.8 C69.38 68 64.82 60 64.82 48 Z" fill="url(#body)"/>
+<path d="M25.49 44 C25.49 33 34.04 28 50 28 C65.96 28 74.51 33 74.51 44 Q74.51 51.5 65.96 51.5 H34.04 Q25.49 51.5 25.49 44 Z" fill="url(#body)"/>
+<path d="M46.81 5.5 H53.19 V11 H59.69 V16.5 H53.19 V28 H46.81 V16.5 H40.31 V11 H46.81 Z" fill="url(#body)"/>
+<path d="M27.2 66.5 Q27.2 63 31.19 63 H68.81 Q72.8 63 72.8 66.5 Q72.8 70 68.81 70 H31.19 Q27.2 70 27.2 66.5 Z" fill="url(#body)"/>
+<path d="M24.35 78.5 V81 Q24.35 84.5 28.34 84.5 H71.66 Q75.65 84.5 75.65 81 V78.5 Q75.65 76.5 73.37 76.5 H26.63 Q24.35 76.5 24.35 78.5 Z" fill="url(#body)"/>
+<path d="M16.94 92 V88 Q16.94 84.5 20.93 84.5 H79.07 Q83.06 84.5 83.06 88 V92 Z" fill="url(#body)"/>
+</g>
+<g fill="none" stroke="#292D2C" stroke-opacity="0.55" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+<path d="M28.91 70 H71.09"/>
+<path d="M50 31 V47"/>
+<path d="M20.93 84.5 H79.07"/>
+<path d="M26.63 76.5 H73.37"/>
+</g>
+<path d="M21.5 87.2 H78.5" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+</svg>

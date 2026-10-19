@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+<title>Black pawn</title>
+<defs>
+<linearGradient id="body" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#34393A"/><stop offset="0.3" stop-color="#5E6564"/><stop offset="0.62" stop-color="#292D2C"/><stop offset="1" stop-color="#111313"/></linearGradient>
+<linearGradient id="diag" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#5E6564"/><stop offset="0.45" stop-color="#292D2C"/><stop offset="1" stop-color="#111313"/></linearGradient>
+<radialGradient id="ball" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#7A8281"/><stop offset="0.5" stop-color="#292D2C"/><stop offset="1" stop-color="#111313"/></radialGradient>
+<radialGradient id="shadow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#000" stop-opacity="0.38"/><stop offset="0.65" stop-color="#000" stop-opacity="0.16"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+</defs>
+<ellipse cx="53" cy="92.5" rx="41" ry="4.3" fill="url(#shadow)"/>
+<g stroke="#111313" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+<path d="M40.31 44 C40.31 56 35.18 65 28.91 76.5 H71.09 C64.82 65 59.69 56 59.69 44 Z" fill="url(#body)"/>
+<circle cx="50.0" cy="31" r="9.5" fill="url(#ball)"/>
+<path d="M35.75 44.5 Q35.75 40.5 40.31 40.5 H59.69 Q64.25 40.5 64.25 44.5 Q64.25 48.5 59.69 48.5 H40.31 Q35.75 48.5 35.75 44.5 Z" fill="url(#body)"/>
+<path d="M24.35 78.5 V81 Q24.35 84.5 28.34 84.5 H71.66 Q75.65 84.5 75.65 81 V78.5 Q75.65 76.5 73.37 76.5 H26.63 Q24.35 76.5 24.35 78.5 Z" fill="url(#body)"/>
+<path d="M16.94 92 V88 Q16.94 84.5 20.93 84.5 H79.07 Q83.06 84.5 83.06 88 V92 Z" fill="url(#body)"/>
+</g>
+<g fill="none" stroke="#F1E9D8" stroke-opacity="0.5" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+<path d="M38.6 48.5 H61.4"/>
+<path d="M20.93 84.5 H79.07"/>
+<path d="M26.63 76.5 H73.37"/>
+</g>
+<path d="M21.5 87.2 H78.5" stroke="#9AA3A1" stroke-opacity="0.45" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+</svg>

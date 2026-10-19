@@ -34,3 +34,37 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Game history (Prisma + PostgreSQL)
+
+Finished games against Stockfish are saved to PostgreSQL and listed on the
+History page (`/history`), where each one can be opened in Analysis, downloaded
+as PGN or deleted. There are no accounts: each visitor's history is kept under a key derived from
+their IP address, so people on different networks never see each other's games.
+Only a keyed hash of the address is stored (never the address), and every query
+in `app/api/games` is filtered by it.
+
+Setup:
+
+```bash
+npm install
+cp .env.example .env        # set DATABASE_URL to your PostgreSQL database
+npm run db:migrate          # first time: creates the games table (name it "init")
+npm run db:generate         # generates the Prisma client into app/generated/prisma
+npm run dev
+```
+
+- Set `HISTORY_OWNER_SECRET` in `.env` (required in production) and, behind a
+  proxy that sets a dedicated client-IP header, `CLIENT_IP_HEADER`; see
+  `.env.example`. The proxy must overwrite (not pass through) that header, or
+  visitors could claim someone else's address.
+- Put `DATABASE_URL` in `.env` (not only `.env.local`): the Prisma CLI reads `.env`.
+- On a server, apply committed migrations with `npm run db:deploy`.
+- People behind the same public IP (a household, an office) share one history,
+  and a visitor whose IP changes starts a new one. Games saved before ownership
+  existed have an empty `ownerKey` and are shown to nobody.
+- The schema is `prisma/schema.prisma`; the API is `app/api/games`. The server
+  replays the submitted moves with chess.js and works out the result and PGN
+  itself, so it never stores an illegal game or a made-up result.
+- If the database is unreachable the game still plays; the panel says the game
+  couldn't be saved and the PGN download remains available.
