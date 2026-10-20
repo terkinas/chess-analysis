@@ -1,4 +1,5 @@
 import Link from "next/link";
+import MobileNav from "./MobileNav";
 
 type NavKey = "play" | "analysis" | "history" | "settings";
 
@@ -10,7 +11,7 @@ const NAV_ITEMS: readonly {
 }[] = [
   { label: "Play", href: "/", key: "play" },
   { label: "Analysis", href: "/analysis", key: "analysis" },
-  { label: "History", href: "/games", key: "history" },
+  { label: "History", href: "/history", key: "history" },
   { label: "Settings", href: "/settings", key: "settings" },
 ];
 
@@ -32,7 +33,18 @@ export default function SiteHeader({ current }: SiteHeaderProps) {
           <span className="text-accent">.</span>
         </Link>
 
-        <nav aria-label="Primary">
+        {/* Phones get a hamburger menu; wider screens get the row of links. */}
+        <div className="sm:hidden">
+          <MobileNav
+            items={NAV_ITEMS.map((item) => ({
+              label: item.label,
+              href: item.href,
+              current: item.key !== undefined && item.key === current,
+            }))}
+          />
+        </div>
+
+        <nav aria-label="Primary" className="hidden sm:block">
           <ul className="flex items-center gap-1 text-sm">
             {NAV_ITEMS.map((item) => {
               const isCurrent = item.key !== undefined && item.key === current;

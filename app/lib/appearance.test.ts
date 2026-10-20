@@ -22,7 +22,7 @@ describe("parseAppearance", () => {
   });
 
   it("round-trips a saved value", () => {
-    const saved = { pieceSet: "flat", board: { light: "#f0d9b5", dark: "#b58863" } } as const;
+    const saved = { pieceSet: "heritage3d", board: { light: "#f0d9b5", dark: "#b58863" } } as const;
     assert.deepEqual(parseAppearance(serializeAppearance(saved)), saved);
   });
 
@@ -35,8 +35,28 @@ describe("parseAppearance", () => {
     // A set that was removed from the catalogue (e.g. an older "marble") resets.
     assert.equal(parseAppearance({ pieceSet: "marble" }).pieceSet, "classic");
     assert.deepEqual(parsed.board, DEFAULT_APPEARANCE.board);
-    assert.equal(parseAppearance({ pieceSet: "flat" }).pieceSet, "flat");
+    assert.equal(
+      parseAppearance({ pieceSet: "heritage3d" }).pieceSet,
+      "heritage3d",
+    );
+    // Sets removed from the catalogue reset to the default.
+    for (const removed of ["flat", "staunton", "heritage"]) {
+      assert.equal(parseAppearance({ pieceSet: removed }).pieceSet, "classic");
+    }
   });
+
+  it("only keeps colours that are a preset", () => {
+    // A custom pair, and a preset that was removed (Lagoon), reset to default.
+    for (const board of [
+      { light: "#123456", dark: "#654321" },
+      { light: "#e0efe9", dark: "#5c9a95" },
+    ]) {
+      assert.deepEqual(parseAppearance({ board }).board, DEFAULT_APPEARANCE.board);
+    }
+    assert.deepEqual(
+      parseAppearance({ board: { light: "#DEE3E6", dark: "#8CA2AD" } }).board,
+      { light: "#dee3e6", dark: "#8ca2ad" },
+    );  });
 
   it("normalises hex colours", () => {
     assert.equal(normalizeHex("#ABC"), "#aabbcc");
@@ -56,6 +76,20 @@ describe("catalogue", () => {
         }
       }
     }
+  });
+
+  it("offers exactly the four piece sets and three board colours", () => {
+    assert.deepEqual(PIECE_SETS.map((set) => set.id), [
+      "classic",
+      "heritage3d",
+      "burnett",
+      "burnett3d",
+    ]);
+    assert.deepEqual(BOARD_PRESETS.map((preset) => preset.id), [
+      "gambit",
+      "walnut",
+      "slate",
+    ]);
   });
 
   it("keeps every board preset readable", () => {

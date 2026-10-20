@@ -13,8 +13,6 @@ type GameOverDialogProps = {
   onPlayAgain: () => void;
   /** Open the analysis page with this game loaded. */
   onAnalyze: () => void;
-  /** True while the game is being saved for analysis. */
-  analyzing: boolean;
   /** Close the dialog and step through the finished game. */
   onReview: () => void;
   /** Escape or a click on the backdrop: stay on the final position. */
@@ -32,7 +30,6 @@ export default function GameOverDialog({
   plies,
   onPlayAgain,
   onAnalyze,
-  analyzing,
   onReview,
   onClose,
 }: GameOverDialogProps) {
@@ -51,11 +48,10 @@ export default function GameOverDialog({
       <div className="mt-5 flex flex-col gap-2">
         <button
           type="button"
-          disabled={analyzing}
           onClick={onAnalyze}
-          className="rounded-md border border-line px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+          className="rounded-md border border-line px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
-          {analyzing ? "Opening analysis…" : "Analyze game"}
+          Analyze game
         </button>
         <div className="grid grid-cols-2 gap-2">
           <button

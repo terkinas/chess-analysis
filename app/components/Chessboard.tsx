@@ -99,13 +99,27 @@ export type { ArrowAnnotation };
 const sameArrow = (a: ArrowAnnotation, b: ArrowAnnotation) =>
   a.from === b.from && a.to === b.to;
 
-/** Pointer travel (px) before a press on a piece becomes a drag. */
+/** Pointer travel (px) before a mouse press on a piece becomes a drag. */
 const DRAG_THRESHOLD = 4;
+/**
+ * A finger wobbles far more than a mouse, so a touch or pen press needs more
+ * travel to count as a drag; otherwise ordinary taps turn into drags.
+ */
+const TOUCH_DRAG_THRESHOLD = 10;
+/**
+ * After a press on a piece ends, the browser's own click on the same square is
+ * part of that gesture (already handled from the pointer events) for this long.
+ */
+const CLICK_ECHO_MS = 500;
+/** Only called from event handlers; a named helper keeps the purity lint quiet. */
+const clockNow = () => performance.now();
 
 type HeldDrag = {
   from: Square;
   piece: PieceCode;
   pointerId: number;
+  /** "mouse", "touch" or "pen". Only a mouse lifts the piece before it moves. */
+  pointerType: string;
   /** Square under the pointer, or null when it is off the board. */
   over: Square | null;
   /** Edge length of one square, in px. */
@@ -182,7 +196,11 @@ export default function Chessboard({
   const heldRef = useRef<HeldDrag | null>(null);
   const [held, setHeld] = useState<HeldDrag | null>(null);
   const pointerPos = useRef({ x: 0, y: 0 });
-  const suppressClick = useRef(false);
+  // Squares of the press that just ended and when it ended, so the click the
+  // browser sends for the same gesture is not counted a second time.
+  const recentPointer = useRef<{ squares: readonly Square[]; at: number } | null>(
+    null,
+  );
 
   // Right-button arrow in progress: where it started and the square under the
   // pointer now is only read on release: nothing is drawn while dragging. The
@@ -297,6 +315,27 @@ export default function Chessboard({
     return `${files[Math.min(7, col)]}${ranks[Math.min(7, row)]}` as const;
   }
 
+  // A press on a piece is fully handled from pointer events (a tap selects, a
+  // drop moves). The browser then also sends a click for it. With a mouse that
+  // click comes straight away, but on a touch screen it can arrive later than a
+  // zero-delay timer, so it is matched by square and time instead of a flag.
+  // Counting it would select the piece and then deselect it again.
+  function markPointerHandled(...squares: Square[]) {
+    recentPointer.current = { squares, at: clockNow() };
+  }
+
+  function isEchoClick(square: Square): boolean {
+    const recent = recentPointer.current;
+    if (!recent) return false;
+    if (clockNow() - recent.at > CLICK_ECHO_MS) {
+      recentPointer.current = null;
+      return false;
+    }
+    if (!recent.squares.includes(square)) return false;
+    recentPointer.current = null;
+    return true;
+  }
+
   function setHeldDrag(next: HeldDrag | null) {
     heldRef.current = next;
     setHeld(next);
@@ -374,6 +413,7 @@ export default function Chessboard({
       from: square,
       piece,
       pointerId: event.pointerId,
+      pointerType: event.pointerType,
       over: square,
       size: event.currentTarget.getBoundingClientRect().width / 8,
       startX: event.clientX,
@@ -393,13 +433,14 @@ export default function Chessboard({
     pointerPos.current = { x: event.clientX, y: event.clientY };
     placeFloater(floaterRef.current);
     const over = squareAt(event.clientX, event.clientY);
+    const threshold =
+      drag.pointerType === "mouse" ? DRAG_THRESHOLD : TOUCH_DRAG_THRESHOLD;
     const moved =
       drag.moved ||
       Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >=
-        DRAG_THRESHOLD;
+        threshold;
     if (moved && !drag.moved) {
-      // The press became a drag; the click that follows must not count.
-      suppressClick.current = true;
+      // The press became a drag.
       onPieceDragStart(drag.from);
     }
     if (moved !== drag.moved || over !== drag.over) {
@@ -439,14 +480,11 @@ export default function Chessboard({
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const over = squareAt(event.clientX, event.clientY);
     endHold();
-    // The click that follows a drag must not toggle the selection.
-    suppressClick.current = true;
-    setTimeout(() => {
-      suppressClick.current = false;
-    }, 0);
+    // The click that follows this press must not count a second time.
+    markPointerHandled(drag.from, ...(over ? [over] : []));
     if (!drag.moved) {
-      // Never really dragged: a plain click on the piece. Capture redirects
-      // the browser's own click, so run the click handling here.
+      // Never really dragged: a plain click or tap on the piece. Capture can
+      // redirect the browser's own click, so run the click handling here.
       if (holdEnabled) activateSquare(drag.from);
       return;
     }
@@ -458,9 +496,6 @@ export default function Chessboard({
     if (arrowRef.current?.pointerId === event.pointerId) cancelArrow();
     if (heldRef.current?.pointerId !== event.pointerId) return;
     endHold();
-    setTimeout(() => {
-      suppressClick.current = false;
-    }, 0);
   }
 
   const floaterRef = useRef<HTMLDivElement | null>(null);
@@ -519,6 +554,12 @@ export default function Chessboard({
     onPieceDragStart(square);
   }
 
+  // A mouse lifts the piece the moment it is pressed. A finger does not: until
+  // it has really moved, a touch is still a tap, so the piece stays put (no
+  // ghost copy under the finger) and releasing just selects it.
+  const lifted =
+    held !== null && (held.moved || held.pointerType === "mouse");
+
   return (
     <div
       ref={gridRef}
@@ -530,7 +571,7 @@ export default function Chessboard({
       onPointerCancel={pointerMode ? handlePointerAbort : undefined}
       onLostPointerCapture={pointerMode ? handlePointerAbort : undefined}
       onContextMenu={arrowsEnabled ? (event) => event.preventDefault() : undefined}
-      className={`relative grid aspect-square w-full grid-cols-8 grid-rows-8 overflow-hidden rounded-sm ${held ? "cursor-grabbing" : ""} shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_28px_60px_-28px_rgba(0,0,0,0.9)]`}
+      className={`relative grid aspect-square w-full grid-cols-8 grid-rows-8 overflow-hidden rounded-sm ${lifted ? "cursor-grabbing" : ""} shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_28px_60px_-28px_rgba(0,0,0,0.9)]`}
     >
       {ranks.map((rank, row) => (
         // `contents` keeps the row wrapper out of the layout: the squares
@@ -554,7 +595,7 @@ export default function Chessboard({
             const isClickable = canPick || destination !== undefined;
             const canHold =
               holdMode && holdEnabled && piece?.[0] === holdColor;
-            const isHeldSource = held?.from === square;
+            const isHeldSource = lifted && held?.from === square;
             const isOver = held?.moved === true && held.over === square;
 
             return (
@@ -573,8 +614,9 @@ export default function Chessboard({
                 tabIndex={square === focusSquare ? 0 : -1}
                 draggable={!holdMode && canPick}
                 onClick={() => {
-                  // A click that ends a drag is not a click.
-                  if (suppressClick.current) return;
+                  // The click echo of a press the pointer handlers already
+                  // handled (a tap or a drop) is not a second click.
+                  if (isEchoClick(square)) return;
                   activateSquare(square);
                 }}
                 onFocus={() => setFocusSquare(square)}
@@ -693,7 +735,7 @@ export default function Chessboard({
           opacity={0.8}
         />
       )}
-      {held && (
+      {held && lifted && (
         // The piece that follows the pointer. It is positioned imperatively on
         // pointer moves (see placeFloater) so re-renders never snap it back.
         <div

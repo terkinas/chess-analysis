@@ -4,7 +4,6 @@ import { useSyncExternalStore } from "react";
 import {
   APPEARANCE_STORAGE_KEY,
   DEFAULT_APPEARANCE,
-  DEFAULT_BOARD_COLORS,
   parseAppearance,
   sameAppearance,
   serializeAppearance,
@@ -86,10 +85,6 @@ export function setPieceSet(pieceSet: PieceSetId) {
 
 export function setBoardColors(board: BoardColors) {
   update((appearance) => ({ ...appearance, board: { ...board } }));
-}
-
-export function resetBoardColors() {
-  setBoardColors(DEFAULT_BOARD_COLORS);
 }
 
 export function useAppearance(): Appearance {
