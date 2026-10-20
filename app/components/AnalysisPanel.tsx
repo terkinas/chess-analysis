@@ -1,6 +1,5 @@
 import { useEffect, useRef, type Ref, type RefObject } from "react";
 import { toMovePairs } from "../lib/chess-game";
-import { revealInContainer } from "../lib/scroll-within";
 import type { EvaluationStatus } from "../lib/use-position-analysis";
 import type { LineOption } from "../lib/analysis-session";
 import type { LabelTone, MoveQualityLabel } from "../lib/move-quality-label";
@@ -32,10 +31,6 @@ type AnalysisPanelProps = {
    */
   variationStart: number | null;
   onReset: () => void;
-  /** The side at the bottom of the board, to word the flip button. */
-  boardOrientation: "w" | "b";
-  /** Turns the board around to the other side's point of view. */
-  onFlipBoard: () => void;
   /** Opens the PGN import dialog. */
   onImport: () => void;
   /** Lets the parent return focus here when the dialog closes. */
@@ -370,8 +365,6 @@ export default function AnalysisPanel({
   onSelectLine,
   variationStart,
   onReset,
-  boardOrientation,
-  onFlipBoard,
   onImport,
   importButtonRef,
   importNotice,
@@ -427,10 +420,9 @@ export default function AnalysisPanel({
 
   // Keep the highlighted move visible as the cursor moves or the line grows.
   useEffect(() => {
-    // Scrolls the list only; scrollIntoView would also scroll the page.
-    const list = listRef.current;
-    const current = list?.querySelector<HTMLElement>('[aria-current="step"]');
-    if (list && current) revealInContainer(list, current);
+    listRef.current
+      ?.querySelector<HTMLElement>('[aria-current="step"]')
+      ?.scrollIntoView({ block: "nearest" });
   }, [ply, moves.length]);
 
   return (
@@ -482,26 +474,14 @@ export default function AnalysisPanel({
           >
             Moves
           </h2>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onFlipBoard}
-              aria-label={`Flip board, ${
-                boardOrientation === "w" ? "White" : "Black"
-              } is at the bottom`}
-              className={SMALL_BUTTON}
-            >
-              Flip board
-            </button>
-            <button
-              ref={importButtonRef}
-              type="button"
-              onClick={onImport}
-              className={SMALL_BUTTON}
-            >
-              Import PGN
-            </button>
-          </div>
+          <button
+            ref={importButtonRef}
+            type="button"
+            onClick={onImport}
+            className={SMALL_BUTTON}
+          >
+            Import PGN
+          </button>
         </div>
 
         {importNotice && (

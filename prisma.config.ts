@@ -1,10 +1,18 @@
-import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
-// Prisma 7 reads the connection URL from here rather than from schema.prisma,
-// and does not load .env by itself (hence the dotenv import above).
+// The Prisma CLI does not read .env by itself; Next.js does at runtime.
+try {
+  process.loadEnvFile();
+} catch {
+  // No .env file: DATABASE_URL may come from the real environment instead.
+}
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: { path: "prisma/migrations" },
-  datasource: { url: env("DATABASE_URL") },
+  datasource: {
+    // `prisma generate` runs on install, before any database is configured, so
+    // a missing URL must not fail it; commands that connect will still fail.
+    url: process.env.DATABASE_URL ?? "postgresql://invalid:invalid@localhost:5432/invalid",
+  },
 });

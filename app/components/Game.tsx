@@ -30,13 +30,11 @@ import {
   initialMsOf,
   isTimed,
 } from "../lib/chess-clock";
-import { saveHandoff } from "../lib/analysis-handoff";
-import type { SaveGameRequest } from "../lib/game-record";
-import { newGameId } from "../lib/games-api";
+import { saveGame } from "../actions/games";
 import { getLevel } from "../lib/engine-levels";
+import { newGameId } from "../lib/game-id";
 import { playMoveSound, primeMoveSound } from "../lib/move-sound";
 import { useChessClock } from "../lib/use-chess-clock";
-import { useGameSaver, type SaveStatus } from "../lib/use-game-saver";
 import { useEngineOpponent } from "../lib/use-engine-opponent";
 import Chessboard, { type ArrowAnnotation } from "./Chessboard";
 import Dialog from "./Dialog";
@@ -87,10 +85,11 @@ export default function Game() {
   const [resigned, setResigned] = useState<Color | null>(null);
   const [confirmingResign, setConfirmingResign] = useState(false);
   const [resultDismissed, setResultDismissed] = useState(false);
+  // Identifies this game in the database; a new one is made on every start.
+  const [gameId, setGameId] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
   // Incremented on every game start so the engine never reuses a stale request.
   const [gameEpoch, setGameEpoch] = useState(0);
-  // Names the game on the board in the history database; new on every start.
-  const [gameId, setGameId] = useState("");
   // The square of the piece the human is holding on the pointer, if any. It
   // can be picked up during Stockfish's turn; nothing is played until release.
   const [heldFrom, setHeldFrom] = useState<Square | null>(null);
@@ -231,47 +230,6 @@ export default function Game() {
     playing && undoLength !== null && timedOut === null && resigned === null;
   const canResign = playing && !status.isOver;
 
-  // A finished game is saved to the history database. Undo after a checkmate
-  // reopens the game, so it also takes that saved row back out (see the hook).
-  const saveRequest = useMemo<SaveGameRequest | null>(
-    () =>
-      playing && outcome !== null && gameId !== ""
-        ? {
-            id: gameId,
-            moves,
-            humanColor,
-            levelId: setup.levelId,
-            clockMinutes: setup.clock.minutes,
-            clockIncrementSeconds: setup.clock.incrementSeconds,
-            timedOut,
-            resigned,
-          }
-        : null,
-    [
-      playing,
-      outcome,
-      gameId,
-      moves,
-      humanColor,
-      setup.levelId,
-      setup.clock.minutes,
-      setup.clock.incrementSeconds,
-      timedOut,
-      resigned,
-    ],
-  );
-  const handleSaveStatus = useCallback((saveStatus: SaveStatus) => {
-    setPgnNotice(
-      saveStatus === "saved"
-        ? "Game saved to history"
-        : "Couldn't save to history — download the PGN to keep it",
-    );
-  }, []);
-  const { discard: discardSavedGame } = useGameSaver(
-    saveRequest,
-    handleSaveStatus,
-  );
-
   function commitMove(san: string, animate = true) {
     const next = [...moves, san];
     if (animate) {
@@ -366,7 +324,6 @@ export default function Game() {
   // engine hook because the position changes.
   function undo() {
     if (!canUndo || undoLength === null) return;
-    discardSavedGame(gameId);
     abortDrag();
     setArrows([]);
     setHighlights([]);
@@ -455,18 +412,58 @@ export default function Game() {
     }
   }
 
-  // Opens the analysis page on this game. The moves travel as PGN in
-  // sessionStorage (see analysis-handoff.ts); if storage is blocked, stay here
-  // rather than land on an empty analysis board.
-  function analyzeGame() {
-    if (moves.length === 0) return;
-    const pgn = toPgn(moves, new Date(), pgnPlayers, timedOut, resigned);
-    if (!saveHandoff(pgn)) {
-      setResultDismissed(true);
-      setPgnNotice("Couldn't open analysis — try Download instead");
+  // What the server needs to store this game. It replays the moves and works
+  // out the result itself, so only the facts of the game are sent.
+  const savePayload = useMemo(
+    () =>
+      gameId === null || moves.length === 0
+        ? null
+        : {
+            id: gameId,
+            moves,
+            humanColor,
+            levelId: setup.levelId,
+            clockMinutes: setup.clock.minutes,
+            clockIncrementSeconds: setup.clock.incrementSeconds,
+            timedOut,
+            resigned,
+          },
+    [gameId, moves, humanColor, setup.levelId, setup.clock, timedOut, resigned],
+  );
+
+  // A finished game is saved to the history once. Undoing a checkmate makes the
+  // game unfinished again, which re-arms this so the replayed ending is saved.
+  const savedGameIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!playing || outcome === null || savePayload === null) {
+      savedGameIdRef.current = null;
       return;
     }
-    router.push("/analysis");
+    if (savedGameIdRef.current === savePayload.id) return;
+    savedGameIdRef.current = savePayload.id;
+    void saveGame(savePayload).then((result) => {
+      // Retry later (the next outcome change) rather than lose the game.
+      if (!result.ok && savedGameIdRef.current === savePayload.id) {
+        savedGameIdRef.current = null;
+      }
+    });
+  }, [playing, outcome, savePayload]);
+
+  // Saves this game (also when it is still in progress), then opens it on the
+  // analysis page. Stays here with a message if it could not be saved.
+  async function analyzeGame() {
+    if (savePayload === null || analyzing) return;
+    setAnalyzing(true);
+    const result = await saveGame(savePayload);
+    setAnalyzing(false);
+    // Close the result dialog either way: it is a native modal, and it would
+    // otherwise cover the message below or follow the player back here.
+    setResultDismissed(true);
+    if (!result.ok) {
+      setPgnNotice(`${result.error} Use Download to keep the PGN.`);
+      return;
+    }
+    router.push(`/analysis?game=${result.id}`);
   }
 
   const pgnPlayers =
@@ -626,6 +623,7 @@ export default function Game() {
         canResign={canResign}
         onResign={() => setConfirmingResign(true)}
         onAnalyze={analyzeGame}
+        analyzing={analyzing}
         newGameDisabled={!playing}
       />
 
@@ -644,6 +642,7 @@ export default function Game() {
           plies={moves.length}
           onPlayAgain={startGame}
           onAnalyze={analyzeGame}
+          analyzing={analyzing}
           onReview={() => {
             setResultDismissed(true);
             goToPly(0);

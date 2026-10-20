@@ -1,118 +1,80 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
-import { parseSaveRequest, type SaveGameRequest } from "./game-record.ts";
+import { test } from "node:test";
+import { buildGameRecord, MAX_PLIES, verdictFor } from "./game-record.ts";
 
-const NOW = new Date(2026, 9, 19, 12, 0, 0);
+const ID = "3f2b8c1e-9d4a-4e6b-8a7c-1b2c3d4e5f60";
+const NOW = new Date("2026-10-20T12:00:00Z");
+const base = {
+  id: ID,
+  moves: ["e4", "e5", "Nf3"],
+  humanColor: "w",
+  levelId: "standard",
+  clockMinutes: 10,
+  clockIncrementSeconds: 0,
+  timedOut: null,
+  resigned: null,
+};
 const FOOLS_MATE = ["f3", "e5", "g4", "Qh4#"];
 
-function request(overrides: Partial<SaveGameRequest> = {}): SaveGameRequest {
-  return {
-    id: "game-0001-abcdef",
-    moves: FOOLS_MATE,
-    humanColor: "w",
-    levelId: "standard",
-    clockMinutes: 10,
-    clockIncrementSeconds: 5,
-    timedOut: null,
-    resigned: null,
-    ...overrides,
-  };
+function ok(input: unknown) {
+  const result = buildGameRecord(input, NOW);
+  assert.equal(result.ok, true);
+  return result.ok ? result.record : (undefined as never);
 }
 
-describe("parseSaveRequest", () => {
-  it("stores a checkmate with the result worked out from the moves", () => {
-    const parsed = parseSaveRequest(request(), NOW);
-    assert.ok(parsed.ok);
-    assert.equal(parsed.record.result, "BLACK_WIN");
-    assert.equal(parsed.record.termination, "CHECKMATE");
-    assert.equal(parsed.record.plies, 4);
-    assert.equal(parsed.record.humanColor, "WHITE");
-    assert.equal(parsed.record.engineLevel, "standard");
-    assert.match(parsed.record.pgn, /\[Result "0-1"\]/);
-    assert.match(parsed.record.pgn, /\[White "You"\]/);
-    assert.match(parsed.record.pgn, /\[Black "Stockfish"\]/);
-  });
+test("an unfinished game is stored as * with no termination", () => {
+  const record = ok(base);
+  assert.equal(record.result, "*");
+  assert.equal(record.termination, null);
+  assert.equal(record.plies, 3);
+  assert.equal(record.white, "You");
+  assert.equal(record.black, "Stockfish");
+  assert.match(record.pgn, /1\. e4 e5 2\. Nf3/);
+});
 
-  it("names the players from the human's colour", () => {
-    const parsed = parseSaveRequest(request({ humanColor: "b" }), NOW);
-    assert.ok(parsed.ok);
-    assert.equal(parsed.record.humanColor, "BLACK");
-    assert.match(parsed.record.pgn, /\[White "Stockfish"\]/);
-    assert.match(parsed.record.pgn, /\[Black "You"\]/);
-  });
+test("the result is worked out from the board, not trusted from the client", () => {
+  const record = ok({ ...base, moves: FOOLS_MATE, humanColor: "b" });
+  assert.equal(record.result, "0-1");
+  assert.equal(record.termination, "checkmate");
+  assert.equal(record.white, "Stockfish");
+  assert.equal(record.black, "You");
+});
 
-  it("stores a resignation as a loss for the resigning side", () => {
-    const parsed = parseSaveRequest(
-      request({ moves: ["e4"], resigned: "w" }),
-      NOW,
-    );
-    assert.ok(parsed.ok);
-    assert.equal(parsed.record.result, "BLACK_WIN");
-    assert.equal(parsed.record.termination, "RESIGNATION");
-  });
+test("resignation and timeout decide an undecided game", () => {
+  const resigned = ok({ ...base, resigned: "w" });
+  assert.equal(resigned.result, "0-1");
+  assert.equal(resigned.termination, "resignation");
+  const flagged = ok({ ...base, timedOut: "b" });
+  assert.equal(flagged.result, "1-0");
+  assert.equal(flagged.termination, "timeout");
+});
 
-  it("stores a flag fall as a loss for the side that ran out of time", () => {
-    const parsed = parseSaveRequest(
-      request({ moves: ["e4", "e5"], timedOut: "b" }),
-      NOW,
-    );
-    assert.ok(parsed.ok);
-    assert.equal(parsed.record.result, "WHITE_WIN");
-    assert.equal(parsed.record.termination, "TIMEOUT");
-  });
+test("a resignation cannot overturn a finished position", () => {
+  const record = ok({ ...base, moves: FOOLS_MATE, resigned: "b" });
+  assert.equal(record.result, "0-1");
+  assert.equal(record.termination, "checkmate");
+});
 
-  it("stores a draw", () => {
-    const parsed = parseSaveRequest(
-      request({
-        moves: ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"],
-      }),
-      NOW,
-    );
-    assert.ok(parsed.ok);
-    assert.equal(parsed.record.result, "DRAW");
-    assert.equal(parsed.record.termination, "DRAW");
-  });
+test("illegal or malformed input is rejected", () => {
+  const bad = (patch: Record<string, unknown>) =>
+    assert.equal(buildGameRecord({ ...base, ...patch }, NOW).ok, false);
+  bad({ moves: ["e4", "e4"] });
+  bad({ moves: [] });
+  bad({ moves: Array(MAX_PLIES + 1).fill("Nf3") });
+  bad({ moves: ["e4", 5] });
+  bad({ id: "not-a-uuid" });
+  bad({ humanColor: "x" });
+  bad({ levelId: "godlike" });
+  bad({ clockMinutes: 7 });
+  bad({ resigned: "red" });
+  assert.equal(buildGameRecord(null, NOW).ok, false);
+  assert.equal(buildGameRecord("hi", NOW).ok, false);
+});
 
-  it("drops the increment of an untimed game", () => {
-    const parsed = parseSaveRequest(
-      request({ clockMinutes: 0, clockIncrementSeconds: 5 }),
-      NOW,
-    );
-    assert.ok(parsed.ok);
-    assert.equal(parsed.record.clockMinutes, 0);
-    assert.equal(parsed.record.clockIncrementSeconds, 0);
-  });
-
-  it("rejects a game that is not finished", () => {
-    assert.equal(parseSaveRequest(request({ moves: ["e4", "e5"] }), NOW).ok, false);
-  });
-
-  it("rejects illegal or empty move lists", () => {
-    assert.equal(parseSaveRequest(request({ moves: ["e5"] }), NOW).ok, false);
-    assert.equal(parseSaveRequest(request({ moves: [] }), NOW).ok, false);
-    assert.equal(parseSaveRequest(request({ moves: [1 as never] }), NOW).ok, false);
-  });
-
-  it("rejects a resignation by the engine's side", () => {
-    const parsed = parseSaveRequest(
-      request({ moves: ["e4"], resigned: "b" }),
-      NOW,
-    );
-    assert.equal(parsed.ok, false);
-  });
-
-  it("rejects bad ids, levels and clocks", () => {
-    assert.equal(parseSaveRequest(request({ id: "a/b" }), NOW).ok, false);
-    assert.equal(parseSaveRequest(request({ levelId: "godlike" }), NOW).ok, false);
-    assert.equal(parseSaveRequest(request({ clockMinutes: 7 }), NOW).ok, false);
-    assert.equal(
-      parseSaveRequest(request({ clockIncrementSeconds: 4 }), NOW).ok,
-      false,
-    );
-  });
-
-  it("rejects bodies that are not objects", () => {
-    assert.equal(parseSaveRequest(null, NOW).ok, false);
-    assert.equal(parseSaveRequest("x", NOW).ok, false);
-  });
+test("verdictFor reads the result from the human's side", () => {
+  assert.equal(verdictFor("1-0", "w"), "win");
+  assert.equal(verdictFor("1-0", "b"), "loss");
+  assert.equal(verdictFor("0-1", "b"), "win");
+  assert.equal(verdictFor("1/2-1/2", "w"), "draw");
+  assert.equal(verdictFor("*", "w"), "unfinished");
 });

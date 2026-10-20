@@ -62,14 +62,9 @@ export function newSession(
 /** The empty session: free play from the starting position. */
 export const EMPTY_SESSION: AnalysisSession = newSession();
 
-/**
- * A session for an imported game; its main line is locked and the cursor starts
- * at the first position, so the game can be stepped through from the beginning.
- */
-export const importedSession = (moves: readonly string[]): AnalysisSession => ({
-  ...newSession(moves, true),
-  ply: 0,
-});
+/** A session for an imported game; its main line is locked. */
+export const importedSession = (moves: readonly string[]): AnalysisSession =>
+  newSession(moves, true);
 
 export function activeLine(session: AnalysisSession): SessionLine {
   return (

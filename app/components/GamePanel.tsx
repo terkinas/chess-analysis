@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { describeHistoryPosition, toMovePairs } from "../lib/chess-game";
-import { revealInContainer } from "../lib/scroll-within";
 import type { EngineOpponentStatus } from "../lib/use-engine-opponent";
 
 type GamePanelProps = {
@@ -32,6 +31,8 @@ type GamePanelProps = {
   onResign: () => void;
   /** Open the analysis page on this game. */
   onAnalyze: () => void;
+  /** True while the game is being saved for analysis. */
+  analyzing: boolean;
   /** New Game does nothing before a game starts (setup is already open). */
   newGameDisabled: boolean;
 };
@@ -84,6 +85,7 @@ export default function GamePanel({
   canResign,
   onResign,
   onAnalyze,
+  analyzing,
   newGameDisabled,
 }: GamePanelProps) {
   const listRef = useRef<HTMLOListElement>(null);
@@ -93,10 +95,9 @@ export default function GamePanel({
 
   // Keep the highlighted move visible as the game grows or the cursor moves.
   useEffect(() => {
-    // Scrolls the list only; scrollIntoView would also scroll the page.
-    const list = listRef.current;
-    const current = list?.querySelector<HTMLElement>('[aria-current="step"]');
-    if (list && current) revealInContainer(list, current);
+    listRef.current
+      ?.querySelector<HTMLElement>('[aria-current="step"]')
+      ?.scrollIntoView({ block: "nearest" });
   }, [shownPly, moves.length]);
 
   return (
@@ -182,11 +183,11 @@ export default function GamePanel({
             </button>
             <button
               type="button"
-              disabled={!hasMoves}
+              disabled={!hasMoves || analyzing}
               onClick={onAnalyze}
               className={SECONDARY_BUTTON}
             >
-              Analyze
+              {analyzing ? "Opening…" : "Analyze"}
             </button>
           </div>
         </div>

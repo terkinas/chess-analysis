@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 type DialogProps = {
   /** Accessible name for the dialog. */
@@ -19,8 +19,13 @@ export default function Dialog({ label, onClose, children }: DialogProps) {
   const openerRef = useRef<HTMLElement | null>(null);
   // True only when a press began on the backdrop (see onClick below).
   const pressedBackdropRef = useRef(false);
+  // Set when this component closes the dialog itself (see the cleanup below),
+  // so the resulting "close" event is not reported as the user dismissing it.
+  const closedByUsRef = useRef(false);
 
-  useEffect(() => {
+  // A layout effect, so that the cleanup runs synchronously when Next.js hides
+  // this page (see below) instead of a frame later.
+  useLayoutEffect(() => {
     const dialog = ref.current;
     if (dialog && !dialog.open) {
       // Captured only on the real open, so StrictMode's second run keeps it.
@@ -31,6 +36,16 @@ export default function Dialog({ label, onClose, children }: DialogProps) {
       dialog.showModal();
     }
     return () => {
+      // With Cache Components, navigating away does not unmount a page: it is
+      // kept hidden (display: none) in a React <Activity>, and so is this
+      // <dialog>. A native modal dialog stays in the browser's top layer and
+      // keeps the whole document inert, so the page navigated *to* would be
+      // frozen. Close it when hidden; the effect reopens it if the page is
+      // shown again with the dialog still wanted.
+      if (dialog?.open) {
+        closedByUsRef.current = true;
+        dialog.close();
+      }
       // Escape restores focus natively, but a dialog that is merely unmounted
       // (a choice was made) leaves it on <body>. Give it back to the opener.
       const opener = openerRef.current;
@@ -45,7 +60,13 @@ export default function Dialog({ label, onClose, children }: DialogProps) {
     <dialog
       ref={ref}
       aria-label={label}
-      onClose={onClose}
+      onClose={() => {
+        if (closedByUsRef.current) {
+          closedByUsRef.current = false;
+          return;
+        }
+        onClose();
+      }}
       onPointerDown={(event) => {
         pressedBackdropRef.current = event.target === event.currentTarget;
       }}

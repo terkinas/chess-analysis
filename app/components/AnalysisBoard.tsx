@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Chess, type Color, type Square } from "chess.js";
-import { takeHandoff } from "../lib/analysis-handoff";
+import { Chess, type Square } from "chess.js";
 import {
   EMPTY_SESSION,
   activeLine,
@@ -70,7 +69,7 @@ function describeImport(game: PgnImportSuccess): string {
   const note = game.variationsIgnored
     ? " Variations were ignored; only the main line is loaded."
     : "";
-  return `Imported${players}${result}: ${count}, starting from the first position.${note}`;
+  return `Imported${players}${result}: ${count}, showing the final position.${note}`;
 }
 
 // A free-play board for studying positions. It has its own state and shares
@@ -92,12 +91,22 @@ function describeImport(game: PgnImportSuccess): string {
 // principal variation can be stepped through on the board as a temporary view
 // that leaves the line, cursor and move list alone.
 // Renders the two grid children that `analysis/page.tsx`'s <main> lays out.
-export default function AnalysisBoard() {
+/**
+ * A saved game to open, from `/analysis?game=<id>`: its PGN, or why it could
+ * not be loaded. The id decides when to load, so a different game in the URL is
+ * loaded even though Next.js keeps this page mounted between visits.
+ */
+export type AnalysisSource =
+  | { id: string; pgn: string }
+  | { id: string; error: string };
+
+export default function AnalysisBoard({
+  source = null,
+}: {
+  source?: AnalysisSource | null;
+}) {
   const [session, setSession] = useState<AnalysisSession>(EMPTY_SESSION);
   const [selected, setSelected] = useState<Square | null>(null);
-  // Which side is at the bottom. A viewing preference only: it never touches
-  // the session, and it survives Reset and imports.
-  const [orientation, setOrientation] = useState<Color>("w");
   const [pendingPromotion, setPendingPromotion] =
     useState<PendingPromotion | null>(null);
 
@@ -130,20 +139,6 @@ export default function AnalysisBoard() {
   // even when the new position equals the old one.
   const [analysisEpoch, setAnalysisEpoch] = useState(0);
 
-  // A game sent over from the play page ("Analyze game") is loaded once, on
-  // arrival, as an imported game. It is read after mount because sessionStorage
-  // does not exist during server rendering. The handoff is removed as it is
-  // read, so a reload or a second visit starts empty.
-  useEffect(() => {
-    const pgn = takeHandoff();
-    if (pgn === null) return;
-    const result = parsePgn(pgn);
-    if (!result.ok) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time load of external (sessionStorage) data on mount
-    setSession(importedSession(result.moves));
-    setAnalysisEpoch((epoch) => epoch + 1);
-    setImportNotice(describeImport(result));
-  }, []);
   const fen = useMemo(() => game.fen(), [game]);
   // Off by default: evaluate each position automatically, at a shallow depth.
   const [autoEvaluate, setAutoEvaluate] = useState(false);
@@ -200,6 +195,27 @@ export default function AnalysisBoard() {
   // puts the board back on `game`. A view only counts while it belongs to the
   // PV on show, so a replaced or discarded PV can never come back.
   const [pvViewState, setPvViewState] = useState<PvView | null>(null);
+
+  // Loads the game from the URL, once per game id. Done while rendering (React's
+  // "adjust state when a prop changes" pattern) so the first paint already
+  // shows the game instead of an empty board that an effect then replaces.
+  const [loadedSourceId, setLoadedSourceId] = useState<string | null>(null);
+  if (source !== null && source.id !== loadedSourceId) {
+    setLoadedSourceId(source.id);
+    setAnalysisEpoch((epoch) => epoch + 1);
+    setSelected(null);
+    setPendingPromotion(null);
+    setPvViewState(null);
+    const parsed = "pgn" in source ? parsePgn(source.pgn) : null;
+    if (parsed?.ok) {
+      setSession(importedSession(parsed.moves));
+      setImportNotice(describeImport(parsed));
+    } else {
+      setImportNotice(
+        "error" in source ? source.error : "That game couldn't be opened.",
+      );
+    }
+  }
   const currentPv =
     evaluation.phase === "done" ? evaluation.evaluation.pv : null;
   const pvView = activePvView(pvViewState, currentPv);
@@ -396,7 +412,7 @@ export default function AnalysisBoard() {
         <EvalBar
           score={inPvView ? null : barScore}
           previousScore={previousScore}
-          orientation={orientation}
+          orientation="w"
         />
         <div
           className={`flex min-w-0 flex-1 flex-col ${
@@ -405,7 +421,7 @@ export default function AnalysisBoard() {
         >
         <Chessboard
           position={shownPosition}
-          orientation={orientation}
+          orientation="w"
           turn={shownStatus.turn}
           interactive={!status.isOver && !pvView}
           selected={selected}
@@ -433,12 +449,6 @@ export default function AnalysisBoard() {
         onSelectLine={chooseLine}
         variationStart={variationStart}
         onReset={reset}
-        boardOrientation={orientation}
-        onFlipBoard={() => {
-          setOrientation((side) => (side === "w" ? "b" : "w"));
-          // A glide would cross the board while it turns around.
-          setSlide(null);
-        }}
         onImport={() => setImportOpen(true)}
         importButtonRef={importButtonRef}
         importNotice={importNotice}

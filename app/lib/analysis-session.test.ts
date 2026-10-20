@@ -48,7 +48,7 @@ describe("free play (main line not locked)", () => {
 
 describe("imported main line", () => {
   it("is locked: a move after its end starts a continuation variation", () => {
-    let s = goToPlyInSession(importedSession(GAME), GAME.length);
+    let s = importedSession(GAME);
     s = playMoveInSession(s, "Bb5");
     assert.deepEqual(mainMoves(s), GAME);
     assert.equal(s.lines.length, 2);
@@ -56,10 +56,9 @@ describe("imported main line", () => {
     assert.deepEqual(lineView(s), { moves: [...GAME, "Bb5"], ply: 5 });
   });
 
-  it("keeps the main line and starts the cursor at the first position", () => {
+  it("keeps the main line and cursor at the end after an import", () => {
     const s = importedSession(GAME);
-    assert.equal(s.ply, 0);
-    assert.deepEqual(mainMoves(s), GAME);
+    assert.equal(s.ply, 4);
     assert.equal(s.mainLocked, true);
   });
 

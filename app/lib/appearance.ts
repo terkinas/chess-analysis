@@ -14,7 +14,7 @@ export const APPEARANCE_VERSION = 1;
 // Piece sets
 // ---------------------------------------------------------------------------
 
-export type PieceSetId = "classic" | "heritage3d" | "burnett" | "burnett3d";
+export type PieceSetId = "classic" | "flat" | "staunton" | "heritage" | "heritage3d";
 
 export type PieceSetInfo = {
   id: PieceSetId;
@@ -33,22 +33,28 @@ export const PIECE_SETS: readonly PieceSetInfo[] = [
     basePath: "/pieces",
   },
   {
+    id: "flat",
+    name: "Flat",
+    description: "Clean, unshaded silhouettes with no inner detail.",
+    basePath: "/pieces/flat",
+  },
+  {
+    id: "staunton",
+    name: "Staunton",
+    description: "Basic, bold silhouettes with a short crown and a left-facing knight.",
+    basePath: "/pieces/staunton",
+  },
+  {
+    id: "heritage",
+    name: "Heritage",
+    description: "Classic outlined silhouettes with a clear horse-head knight, built to read at small sizes.",
+    basePath: "/pieces/heritage",
+  },
+  {
     id: "heritage3d",
     name: "Heritage 3D",
     description: "Heritage pieces with soft shading, rounded highlights and a ground shadow.",
     basePath: "/pieces/heritage-3d",
-  },
-  {
-    id: "burnett",
-    name: "Burnett",
-    description: "Bold black outlines with white detail lines, in the style of the Lichess default set.",
-    basePath: "/pieces/burnett",
-  },
-  {
-    id: "burnett3d",
-    name: "Burnett 3D",
-    description: "Burnett pieces with a soft lit gradient and shadows on and under each piece.",
-    basePath: "/pieces/burnett-3d",
   },
 ];
 
@@ -97,6 +103,10 @@ export const BOARD_PRESETS: readonly BoardPreset[] = [
   },
   { id: "walnut", name: "Walnut", light: "#f0d9b5", dark: "#b58863" },
   { id: "slate", name: "Slate Blue", light: "#dee3e6", dark: "#8ca2ad" },
+  { id: "lagoon", name: "Lagoon", light: "#e0efe9", dark: "#5c9a95" },
+  { id: "rose", name: "Rosewood", light: "#f1e1d8", dark: "#a8665c" },
+  { id: "amethyst", name: "Amethyst", light: "#e8e1f0", dark: "#8b78a8" },
+  { id: "midnight", name: "Midnight", light: "#c6ccd6", dark: "#566a85" },
 ];
 
 export const DEFAULT_BOARD_PRESET: BoardPreset = BOARD_PRESETS[0];
@@ -279,16 +289,12 @@ export function parseAppearance(raw: unknown): Appearance {
       ? (record.board as Record<string, unknown>)
       : {};
 
-  // A pair is only usable as a pair, and only the presets exist: colours saved
-  // by an older version (a removed preset or a custom pair) reset to the default.
+  // A pair is only usable as a pair: half a theme would mismatch.
   const light = normalizeHex(board.light);
   const dark = normalizeHex(board.dark);
-  const preset = light && dark ? findBoardPreset({ light, dark }) : undefined;
   return {
     pieceSet: isPieceSetId(record.pieceSet) ? record.pieceSet : DEFAULT_PIECE_SET,
-    board: preset
-      ? { light: preset.light, dark: preset.dark }
-      : DEFAULT_BOARD_COLORS,
+    board: light && dark ? { light, dark } : DEFAULT_BOARD_COLORS,
   };
 }
 

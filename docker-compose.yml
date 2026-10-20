@@ -1,0 +1,16 @@
+# Local Postgres for game history: `docker compose up -d`
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gambit
+      POSTGRES_PASSWORD: gambit
+      POSTGRES_DB: gambit
+    ports:
+      - "5432:5432"
+    volumes:
+      - gambit-db:/var/lib/postgresql/data
+
+volumes:
+  gambit-db:

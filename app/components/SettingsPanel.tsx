@@ -1,8 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { BOARD_PRESETS, PIECE_SETS, findBoardPreset } from "../lib/appearance";
 import {
+  BOARD_PRESETS,
+  DEFAULT_BOARD_COLORS,
+  PIECE_SETS,
+  boardReadabilityIssues,
+  findBoardPreset,
+  normalizeHex,
+} from "../lib/appearance";
+import {
+  resetBoardColors,
   setBoardColors,
   setPieceSet,
   useAppearance,
@@ -77,20 +85,61 @@ function PieceDesignCard() {
   );
 }
 
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  return (
+    <label className="flex items-center gap-3 rounded-lg border border-line bg-background p-2.5">
+      <input
+        type="color"
+        value={value}
+        onChange={(event) => {
+          const hex = normalizeHex(event.target.value);
+          if (hex) onChange(hex);
+        }}
+        className="h-9 w-12 shrink-0 cursor-pointer rounded border border-line bg-transparent p-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-foreground">
+          {label}
+        </span>
+        <code className="block font-mono text-xs uppercase text-muted">
+          {value}
+        </code>
+      </span>
+    </label>
+  );
+}
+
 function BoardAppearanceCard() {
   const { pieceSet, board } = useAppearance();
   const activePreset = findBoardPreset(board);
+  const isDefault =
+    board.light === DEFAULT_BOARD_COLORS.light &&
+    board.dark === DEFAULT_BOARD_COLORS.dark;
+  const issues = boardReadabilityIssues(board);
 
   return (
     <Card
       title="Board Appearance"
-      description="Choose the colours of the board squares."
+      description="Choose a colour preset, or set each square colour yourself."
     >
       <BoardPreview pieceSet={pieceSet} className="mx-auto max-w-xs" />
       <div className="min-w-0 space-y-5">
         <fieldset>
           <legend className="flex w-full flex-wrap items-center justify-between gap-2 text-xs font-medium uppercase tracking-wide text-muted">
-            Board colours
+            Presets
+            {!activePreset && (
+              <span className="rounded-full border border-line px-2 py-0.5 normal-case tracking-normal text-foreground">
+                Custom
+              </span>
+            )}
           </legend>
           <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
             {BOARD_PRESETS.map((preset) => (
@@ -130,6 +179,39 @@ function BoardAppearanceCard() {
             ))}
           </div>
         </fieldset>
+
+        <div>
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted">
+            Custom colours
+          </h3>
+          <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2">
+            <ColorField
+              label="Light squares"
+              value={board.light}
+              onChange={(light) => setBoardColors({ ...board, light })}
+            />
+            <ColorField
+              label="Dark squares"
+              value={board.dark}
+              onChange={(dark) => setBoardColors({ ...board, dark })}
+            />
+          </div>
+        </div>
+
+        {issues.length > 0 && (
+          <p role="status" className="text-xs text-board-select">
+            {issues.join(" ")}
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={resetBoardColors}
+          disabled={isDefault}
+          className="rounded-md border border-line px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+        >
+          Reset board to default
+        </button>
       </div>
     </Card>
   );

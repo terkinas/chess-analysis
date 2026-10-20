@@ -226,7 +226,7 @@ export function toMovePairs(moves: readonly string[]): MovePair[] {
  * that ran out of time or resigned (`forfeited`) loses unless chess.js says the
  * game had already ended on the board.
  */
-function pgnResult(game: Chess, forfeited: Color | null): string {
+export function pgnResult(game: Chess, forfeited: Color | null): string {
   if (game.isCheckmate()) return game.turn() === "w" ? "0-1" : "1-0";
   if (game.isDraw()) return "1/2-1/2";
   if (forfeited) return forfeited === "w" ? "0-1" : "1-0";
