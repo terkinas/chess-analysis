@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { moveContextAt, terminalWhiteScore } from "./move-context.ts";
+import {
+  moveContextAt,
+  moveContextsForLine,
+  terminalWhiteScore,
+} from "./move-context.ts";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -60,5 +64,37 @@ describe("terminalWhiteScore", () => {
   it("is null for a live position or a bad FEN", () => {
     assert.equal(terminalWhiteScore(START), null);
     assert.equal(terminalWhiteScore("nonsense"), null);
+  });
+});
+
+describe("moveContextsForLine", () => {
+  const SCHOLARS = ["e4", "e5", "Qh5", "Nc6", "Bc4", "Nf6", "Qxf7"];
+
+  it("has one entry per move, matching moveContextAt for each ply", () => {
+    const contexts = moveContextsForLine(SCHOLARS);
+    assert.equal(contexts.length, SCHOLARS.length);
+    SCHOLARS.forEach((_, index) => {
+      assert.deepEqual(contexts[index], moveContextAt(SCHOLARS, index + 1));
+    });
+  });
+
+  it("gives each move the right mover and ply", () => {
+    const contexts = moveContextsForLine(SCHOLARS);
+    assert.equal(contexts[0]?.mover, "w");
+    assert.equal(contexts[1]?.mover, "b");
+    assert.equal(contexts[6]?.san, "Qxf7");
+    assert.equal(contexts[6]?.ply, 7);
+  });
+
+  it("stops at the first illegal move, leaving null from there on", () => {
+    const contexts = moveContextsForLine(["e4", "e4", "d4"]);
+    assert.equal(contexts.length, 3);
+    assert.notEqual(contexts[0], null);
+    assert.equal(contexts[1], null);
+    assert.equal(contexts[2], null);
+  });
+
+  it("is empty for an empty line", () => {
+    assert.deepEqual(moveContextsForLine([]), []);
   });
 });

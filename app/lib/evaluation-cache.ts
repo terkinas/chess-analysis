@@ -12,7 +12,8 @@ export type EvaluationCache = ReadonlyMap<string, PositionEvaluation>;
 export const CACHE_LIMIT = 300;
 
 export const limitKey = (limit: SearchLimit): string =>
-  limit.depth !== undefined ? `d${limit.depth}` : `t${limit.moveTimeMs}`;
+  (limit.depth !== undefined ? `d${limit.depth}` : `t${limit.moveTimeMs}`) +
+  (limit.multiPv === 2 ? "m2" : "");
 
 /** The key of a position searched with `limit`. */
 export const evaluationCacheKey = (fen: string, limit: SearchLimit): string =>

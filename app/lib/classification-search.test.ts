@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Chess } from "chess.js";
 import {
+  classificationDetails,
   classificationScore,
   classificationScores,
   ensureEvaluations,
@@ -263,5 +264,45 @@ describe("ensureEvaluations", () => {
     const result = classifyMove({ before, after, mover: context.mover });
     assert.equal(result.status === "classified" && result.centipawnLoss, 60);
     assert.equal(result.status === "classified" && result.quality, "inaccuracy");
+  });
+});
+
+describe("classificationDetails: the engine's best move", () => {
+  // Black plays e5 here; the position before it was searched at LIMIT.
+  const withBefore = (best: string, beforeCp: number, afterCp: number) => {
+    let cache: EvaluationCache = new Map();
+    cache = withEvaluation(cache, evaluationCacheKey(context.beforeFen, LIMIT), {
+      ...evaluation(beforeCp),
+      bestMoveSan: best,
+    });
+    cache = withEvaluation(
+      cache,
+      evaluationCacheKey(context.afterFen, LIMIT),
+      evaluation(afterCp),
+    );
+    return cache;
+  };
+
+  it("scores the best move by the score of the position before it, not a drifting second search", () => {
+    // The after-search (White's view, side to move White) drifted 70 cp against Black.
+    const cache = withBefore(context.san, -30, 40);
+    const details = classificationDetails(cache, context, LIMIT);
+    assert.deepEqual(details.after, details.before);
+    const result = classifyMove({
+      before: details.before,
+      after: details.after,
+      mover: context.mover,
+    });
+    assert.equal(result.status, "classified");
+    if (result.status === "classified") {
+      assert.equal(result.centipawnLoss, 0);
+      assert.equal(result.quality, "best");
+    }
+  });
+
+  it("still compares a move that is not the engine's best with the search after it", () => {
+    const cache = withBefore("Nf6", -30, 40);
+    const details = classificationDetails(cache, context, LIMIT);
+    assert.deepEqual(details.after, { kind: "cp", cp: 40 });
   });
 });

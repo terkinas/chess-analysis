@@ -77,3 +77,42 @@ export function terminalWhiteScore(fen: string): WhiteScore | null {
   if (game.isStalemate()) return { kind: "cp", cp: 0 };
   return null;
 }
+
+/**
+ * The context of every move on `moves`, in one pass: index `ply - 1` holds the
+ * move that leads to ply `ply`. Moves chess.js rejects (and any after them) are
+ * null, so the array always has one entry per move. Built with one chess.js
+ * instance, so a whole game costs one replay rather than one per move.
+ */
+export function moveContextsForLine(
+  moves: readonly string[],
+): (MoveContext | null)[] {
+  const contexts: (MoveContext | null)[] = [];
+  let game: Chess | null = new Chess();
+  for (let i = 0; i < moves.length; i++) {
+    if (game === null) {
+      contexts.push(null);
+      continue;
+    }
+    const ply = i + 1;
+    try {
+      const beforeFen = game.fen();
+      const mover: Color = game.turn();
+      const san = moves[i];
+      game.move(san);
+      const afterFen = game.fen();
+      contexts.push({
+        ply,
+        san,
+        mover,
+        beforeFen,
+        afterFen,
+        key: `${ply}|${beforeFen}|${san}|${afterFen}`,
+      });
+    } catch {
+      contexts.push(null);
+      game = null;
+    }
+  }
+  return contexts;
+}

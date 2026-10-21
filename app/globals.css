@@ -30,6 +30,10 @@
   --color-board-light-ink: #4d6a52;
   --color-board-dark-ink: #ebe6d3;
   --color-board-select: #f2cd4c;
+  --color-brilliant: #4fd1b5;
+  /* Between the warm select yellow and the danger red, so a mistake reads as
+     worse than an inaccuracy but not as bad as a blunder. */
+  --color-mistake: #e8955a;
   /* Last move: a cool tint, so it never reads as the warm selection colour. */
   --color-board-last: #5f9fd6;
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  classificationScores,
+  classificationDetails,
   ensureEvaluations,
 } from "./classification-search";
 import { classifyMove, type MoveClassification } from "./move-classification";
@@ -23,7 +23,10 @@ export type { MoveClassificationStatus } from "./move-quality-label";
  * fast limit as automatic analysis (reused, not changed). Evaluations made at
  * any other limit are neither used nor compared.
  */
-export const CLASSIFICATION_LIMIT: SearchLimit = AUTO_ANALYSIS_LIMIT;
+export const CLASSIFICATION_LIMIT: SearchLimit = {
+  ...AUTO_ANALYSIS_LIMIT,
+  multiPv: 2,
+};
 
 type Options = {
   /** The move to classify (see `moveContextAt`), or null for none. */
@@ -66,18 +69,24 @@ export function useMoveClassification({
     message: string;
   } | null>(null);
 
-  const { before, after } = useMemo(
+  const details = useMemo(
     () =>
-      context
-        ? classificationScores(cache, context, CLASSIFICATION_LIMIT)
-        : { before: null, after: null },
+      context ? classificationDetails(cache, context, CLASSIFICATION_LIMIT) : null,
     [cache, context],
   );
 
   const classification = useMemo<MoveClassification | null>(() => {
-    if (!context || before === null || after === null) return null;
-    return classifyMove({ before, after, mover: context.mover });
-  }, [context, before, after]);
+    if (!context || !details || details.before === null || details.after === null) {
+      return null;
+    }
+    return classifyMove({
+      before: details.before,
+      after: details.after,
+      mover: context.mover,
+      secondBest: details.secondBest,
+      sacrificed: details.sacrificed,
+    });
+  }, [context, details]);
 
   const failed = failure !== null && failure.key === requestKey;
   const needsSearch = enabled && context !== null && classification === null;

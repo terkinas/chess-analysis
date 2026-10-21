@@ -31,7 +31,7 @@ describe("moveQualityLabel", () => {
       ["good", "Good", "good"],
       ["inaccuracy", "Inaccuracy", "inaccuracy"],
       ["mistake", "Mistake", "mistake"],
-      ["blunder", "Blunder", "mistake"],
+      ["blunder", "Blunder", "blunder"],
     ] as const;
     for (const [quality, text, tone] of expected) {
       const label = moveQualityLabel(done("A", loss(quality, 40)), "A");

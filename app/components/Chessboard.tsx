@@ -17,6 +17,7 @@ import type {
   Position,
 } from "../lib/chess-game";
 import ArrowOverlay, { type ArrowAnnotation } from "./ArrowOverlay";
+import MoveBadgeOverlay, { type MoveBadge } from "./MoveBadgeOverlay";
 import ChessPiece, { describePiece, type PieceCode } from "./ChessPiece";
 
 // With White at the bottom, ranks run 8 → 1 from top to bottom and files run
@@ -91,6 +92,14 @@ type ChessboardProps = {
   dimmed?: boolean;
   /** A read-only arrow (e.g. the engine's best move), drawn above the squares. */
   engineArrow?: ArrowAnnotation | null;
+  /**
+   * A read-only arrow marking a move (e.g. a flagged move in game analysis),
+   * drawn in `moveArrowClassName`'s text colour above the engine arrow.
+   */
+  moveArrow?: ArrowAnnotation | null;
+  moveArrowClassName?: string;
+  /** A read-only badge on a square, e.g. "??" on the landing square of a blunder. */
+  moveBadge?: MoveBadge | null;
   onHighlightsChange?: (squares: readonly Square[]) => void;
 };
 
@@ -181,6 +190,9 @@ export default function Chessboard({
   highlights,
   onHighlightsChange,
   engineArrow = null,
+  moveArrow = null,
+  moveArrowClassName = "text-danger",
+  moveBadge = null,
   animatePieces = false,
   slide = null,
   dimmed = false,
@@ -726,6 +738,14 @@ export default function Chessboard({
           className="text-amber-500"
         />
       )}
+      {moveArrow && (
+        <ArrowOverlay
+          arrows={[moveArrow]}
+          orientation={orientation}
+          className={moveArrowClassName}
+          opacity={0.85}
+        />
+      )}
       {engineArrow && (
         // The engine's suggestion: a different colour from the drawn arrows.
         <ArrowOverlay
@@ -734,6 +754,9 @@ export default function Chessboard({
           className="text-board-last"
           opacity={0.8}
         />
+      )}
+      {moveBadge && (
+        <MoveBadgeOverlay badge={moveBadge} orientation={orientation} />
       )}
       {held && lifted && (
         // The piece that follows the pointer. It is positioned imperatively on

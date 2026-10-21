@@ -15,6 +15,8 @@ import type { WhiteScore } from "./uci-info.ts";
 type Color = "w" | "b";
 
 export type MoveQuality =
+  | "brilliant"
+  | "great"
   | "best"
   | "excellent"
   | "good"
@@ -24,7 +26,7 @@ export type MoveQuality =
 
 /** One band: a move that loses at most `maxLoss` centipawns has this quality. */
 export type QualityThreshold = {
-  quality: Exclude<MoveQuality, "blunder">;
+  quality: Exclude<MoveQuality, "blunder" | "great" | "brilliant">;
   /** Inclusive upper bound, in centipawns lost. */
   maxLoss: number;
 };
@@ -42,6 +44,13 @@ export const CLASSIFICATION_THRESHOLDS: readonly QualityThreshold[] = [
   { quality: "inaccuracy", maxLoss: 100 },
   { quality: "mistake", maxLoss: 200 },
 ];
+
+/**
+ * How much better (in centipawns, for the mover) the best move must be than the
+ * second-best one for it to count as "great": the only move that keeps the
+ * position. Compared on the same search as the played move.
+ */
+export const GREAT_GAP_CP = 200;
 
 /**
  * Quality given to a move that makes a forced mate against the mover come
@@ -153,7 +162,25 @@ export type ClassifyMoveInput = {
   mover: Color;
   /** Overrides the shared bands; must be in ascending `maxLoss` order. */
   thresholds?: readonly QualityThreshold[];
+  /**
+   * Score of the second-best move in the position before, from White's point
+   * of view, when the search found one. Needed for "great".
+   */
+  secondBest?: WhiteScore | null;
+  /**
+   * True when the move is the engine's best move and gives up material that
+   * the best line does not win back straight away (see `materialBalanceChange`).
+   * Needed for "brilliant".
+   */
+  sacrificed?: boolean;
 };
+
+/** A score as centipawns for `score`'s side, mates counted as far beyond any cp. */
+function cpOf(score: PlayerScore): number {
+  if (score.kind === "cp") return score.cp;
+  return score.winning ? MATE_AS_CP : -MATE_AS_CP;
+}
+const MATE_AS_CP = 10000;
 
 const classified = (
   quality: MoveQuality,
@@ -185,6 +212,8 @@ export function classifyMove({
   after,
   mover,
   thresholds = CLASSIFICATION_THRESHOLDS,
+  secondBest = null,
+  sacrificed = false,
 }: ClassifyMoveInput): MoveClassification {
   if (before == null || after == null) return UNAVAILABLE_MISSING;
   if (!isColor(mover)) return UNAVAILABLE_INVALID;
@@ -204,11 +233,22 @@ export function classifyMove({
 
   if (was.kind === "cp" && now.kind === "cp") {
     const loss = Math.max(0, was.cp - now.cp);
-    return classified(
-      classifyCentipawnLoss(loss, thresholds),
-      loss,
-      "centipawn-loss",
-    );
+    const quality = classifyCentipawnLoss(loss, thresholds);
+    if (quality === "best") {
+      // A sacrifice the engine's best line keeps good for the mover.
+      if (sacrificed && now.cp >= 0) {
+        return classified("brilliant", loss, "centipawn-loss");
+      }
+      // The best move is far ahead of the best alternative.
+      if (
+        secondBest !== null &&
+        isValidWhiteScore(secondBest) &&
+        cpOf(was) - cpOf(scoreForPlayer(secondBest, mover)) >= GREAT_GAP_CP
+      ) {
+        return classified("great", loss, "centipawn-loss");
+      }
+    }
+    return classified(quality, loss, "centipawn-loss");
   }
 
   if (now.kind === "mate" && now.winning) {

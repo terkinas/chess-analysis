@@ -3,7 +3,7 @@
 // only speaks UCI over postMessage. It knows nothing about React or chess
 // rules: callers validate the returned move against chess.js themselves.
 
-import { parseInfoLine, type UciInfo } from "./uci-info.ts";
+import { parseScoredInfo, type UciInfo } from "./uci-info.ts";
 
 /** Vendored Stockfish 19 (lite, single-threaded); see public/stockfish/README.md. */
 export const ENGINE_URL = "/stockfish/stockfish-19-lite-single.js";
@@ -21,6 +21,11 @@ export type SearchLimit = {
   moveTimeMs?: number;
   /** Search to this many plies (1–MAX_DEPTH) instead of for a fixed time. */
   depth?: number;
+  /**
+   * How many lines to search. 2 also reports the second-best line (see
+   * `AnalysisResult.second`). Defaults to 1, the best line only.
+   */
+  multiPv?: 1 | 2;
 };
 
 export const MAX_DEPTH = 40;
@@ -115,14 +120,23 @@ export type AnalysisResult = {
   best: BestMove;
   /** The last exact-score `info` line seen, or null if the engine sent none. */
   info: UciInfo | null;
+  /**
+   * The last exact-score line of the second-best move, when the search asked
+   * for two lines (`multiPv: 2`) and the position has one. Null otherwise.
+   */
+  second: UciInfo | null;
+};
+
+type SearchCallbacks = {
+  onInfo?: (info: UciInfo) => void;
+  onSecond?: (info: UciInfo) => void;
 };
 
 export class StockfishEngine {
   private worker: WorkerLike | null = null;
   private status: EngineStatus = "idle";
   private initPromise: Promise<void> | null = null;
-  private search: (Waiter<BestMove> & { onInfo?: (info: UciInfo) => void }) | null =
-    null;
+  private search: (Waiter<BestMove> & SearchCallbacks) | null = null;
   // Searches that were cancelled but whose `bestmove` has not arrived yet.
   // Each `go` yields exactly one `bestmove`, in order, so the next N of them
   // belong to cancelled searches and must be dropped, not delivered.
@@ -176,20 +190,33 @@ export class StockfishEngine {
    */
   async analyze(fen: string, limit: SearchLimit = {}): Promise<AnalysisResult> {
     let info: UciInfo | null = null;
-    const best = await this.runSearch(fen, limit, (line) => {
-      info = line;
+    let second: UciInfo | null = null;
+    const best = await this.runSearch(fen, limit, {
+      onInfo: (line) => {
+        info = line;
+      },
+      onSecond: (line) => {
+        second = line;
+      },
     });
-    return { best, info };
+    return { best, info, second };
   }
 
   private async runSearch(
     fen: string,
     limit: SearchLimit,
-    onInfo?: (info: UciInfo) => void,
+    callbacks: SearchCallbacks = {},
   ): Promise<BestMove> {
     // A FEN is a single line; refuse anything that could smuggle in a second UCI command.
     if (/[\r\n]/.test(fen)) throw new EngineError("Invalid FEN");
     const { depth, moveTimeMs } = limit;
+    if (
+      limit.multiPv !== undefined &&
+      limit.multiPv !== 1 &&
+      limit.multiPv !== 2
+    ) {
+      throw new EngineError("Invalid search limit");
+    }
     if (
       (depth !== undefined &&
         (!Number.isInteger(depth) || depth < 1 || depth > MAX_DEPTH)) ||
@@ -225,7 +252,8 @@ export class StockfishEngine {
         this.fail();
         reject(new EngineError("Engine did not respond"));
       }, watchdogMs);
-      this.search = { resolve, reject, timer, onInfo };
+      this.search = { resolve, reject, timer, ...callbacks };
+      worker.postMessage(`setoption name MultiPV value ${limit.multiPv ?? 1}`);
       worker.postMessage(`position fen ${fen}`);
       worker.postMessage(goCommand);
     });
@@ -320,9 +348,10 @@ export class StockfishEngine {
       // `info` lines only matter to analysis searches. While cancelled searches
       // are still draining, any info line belongs to one of them, not to the
       // current search, so it is dropped.
-      if (this.staleBestMoves === 0 && this.search?.onInfo) {
-        const info = parseInfoLine(line);
-        if (info) this.search.onInfo(info);
+      if (this.staleBestMoves === 0 && this.search) {
+        const scored = parseScoredInfo(line);
+        if (scored?.multipv === 1) this.search.onInfo?.(scored.info);
+        else if (scored?.multipv === 2) this.search.onSecond?.(scored.info);
       }
       return;
     }

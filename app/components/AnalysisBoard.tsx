@@ -43,17 +43,21 @@ import {
   type PvView,
 } from "../lib/pv-format";
 import { replayPvOnto } from "../lib/pv-line";
-import { moveContextAt } from "../lib/move-context";
+import { moveContextAt, moveContextsForLine } from "../lib/move-context";
 import { moveQualityLabel } from "../lib/move-quality-label";
+import { summarizeGame } from "../lib/game-analysis";
+import { markFor } from "../lib/quality-style";
 import { parseUciMove } from "../lib/stockfish-engine";
 import type { WhiteScore } from "../lib/uci-info";
 import { useEvaluationCache } from "../lib/use-evaluation-cache";
+import { useGameAnalysis } from "../lib/use-game-analysis";
 import { useMoveClassification } from "../lib/use-move-classification";
 import { usePositionAnalysis } from "../lib/use-position-analysis";
 import AnalysisPanel from "./AnalysisPanel";
 import Chessboard from "./Chessboard";
 import EvalBar from "./EvalBar";
 import PgnImportDialog from "./PgnImportDialog";
+import PlayerStrip from "./PlayerStrip";
 import PromotionPicker from "./PromotionPicker";
 
 const NO_DESTINATIONS: Destinations = new Map();
@@ -71,6 +75,24 @@ function describeImport(game: PgnImportSuccess): string {
     ? " Variations were ignored; only the main line is loaded."
     : "";
   return `Imported${players}${result}: ${count}, starting from the first position.${note}`;
+}
+
+/** The name shown for a side: the PGN name, or the colour when there is none. */
+function namedSide(
+  players: { white: string | null; black: string | null },
+  side: Color,
+): string {
+  const name = side === "w" ? players.white : players.black;
+  return name ?? (side === "w" ? "White" : "Black");
+}
+
+/** The muted colour word beside a name; empty when there is no name to add it to. */
+function sideDetail(
+  players: { white: string | null; black: string | null },
+  side: Color,
+): string {
+  const named = side === "w" ? players.white : players.black;
+  return named ? (side === "w" ? "White" : "Black") : "";
 }
 
 // A free-play board for studying positions. It has its own state and shares
@@ -91,6 +113,9 @@ function describeImport(game: PgnImportSuccess): string {
 // discarded whenever the position, a reset or an import changes it. Its
 // principal variation can be stepped through on the board as a temporary view
 // that leaves the line, cursor and move list alone.
+// Game analysis (`use-game-analysis.ts`) judges every move of the shown line on
+// request. It only reads the shared evaluation cache, so it never changes the
+// line, the cursor or the board.
 // Renders the two grid children that `analysis/page.tsx`'s <main> lays out.
 export default function AnalysisBoard() {
   const [session, setSession] = useState<AnalysisSession>(EMPTY_SESSION);
@@ -100,6 +125,13 @@ export default function AnalysisBoard() {
   const [orientation, setOrientation] = useState<Color>("w");
   const [pendingPromotion, setPendingPromotion] =
     useState<PendingPromotion | null>(null);
+
+  // Player names from the PGN headers of the loaded game, shown beside the
+  // board so it is clear who is playing which colour. Cleared by Reset.
+  const [players, setPlayers] = useState<{
+    white: string | null;
+    black: string | null;
+  }>({ white: null, black: null });
 
   const [importOpen, setImportOpen] = useState(false);
   // What the last import did; cleared as soon as the line is changed by hand.
@@ -143,6 +175,7 @@ export default function AnalysisBoard() {
     setSession(importedSession(result.moves));
     setAnalysisEpoch((epoch) => epoch + 1);
     setImportNotice(describeImport(result));
+    setPlayers({ white: result.white, black: result.black });
   }, []);
   const fen = useMemo(() => game.fen(), [game]);
   // Off by default: evaluate each position automatically, at a shallow depth.
@@ -170,6 +203,22 @@ export default function AnalysisBoard() {
     epoch: analysisEpoch,
     store: evaluationStore,
   });
+
+  // Every move of the shown line, judged on request (see `useGameAnalysis`).
+  const lineContexts = useMemo(() => moveContextsForLine(moves), [moves]);
+  const gameAnalysis = useGameAnalysis({
+    contexts: lineContexts,
+    store: evaluationStore,
+  });
+  const gameSummary = useMemo(
+    () => summarizeGame(gameAnalysis.analyses),
+    [gameAnalysis.analyses],
+  );
+  // Accuracy of one side once any of its moves are judged, else null.
+  const accuracyOf = (side: Color): number | null => {
+    const summary = side === "w" ? gameSummary.white : gameSummary.black;
+    return summary.analysedMoves > 0 ? summary.accuracy : null;
+  };
 
   // The last score the bar showed for any position. While the position on show
   // has no score of its own the bar keeps this fill (see EvalBar), so it does not
@@ -204,6 +253,19 @@ export default function AnalysisBoard() {
     evaluation.phase === "done" ? evaluation.evaluation.pv : null;
   const pvView = activePvView(pvViewState, currentPv);
   const pvFen = pvView ? pvFenAt(pvView.pv, pvView.index) : null;
+  // The move on the board, marked when game analysis found it noteworthy: a
+  // badge on the square it landed on, and for the bad ones an arrow as well.
+  const mark =
+    pvView || ply === 0 ? null : markFor(gameAnalysis.analyses[ply - 1]?.quality);
+  const moveSquares = useMemo(() => {
+    if (!moveContext || !mark) return null;
+    try {
+      const move = new Chess(moveContext.beforeFen).move(moveContext.san);
+      return move ? { from: move.from, to: move.to } : null;
+    } catch {
+      return null;
+    }
+  }, [moveContext, mark]);
   // The best move for the analysed position, shown only while that position is
   // on the board: `evaluation` is already discarded when the position, a reset
   // or an import changes it, and the arrow is hidden while the PV view shows
@@ -368,6 +430,7 @@ export default function AnalysisBoard() {
   function reset() {
     setSession(EMPTY_SESSION);
     setAnalysisEpoch((epoch) => epoch + 1);
+    setPlayers({ white: null, black: null });
     setImportNotice("");
     clearTransient();
   }
@@ -380,6 +443,7 @@ export default function AnalysisBoard() {
     setSession(importedSession(result.moves));
     setAnalysisEpoch((epoch) => epoch + 1);
     setImportNotice(describeImport(result));
+    setPlayers({ white: result.white, black: result.black });
     clearTransient();
     setImportOpen(false);
     return null;
@@ -387,7 +451,7 @@ export default function AnalysisBoard() {
 
   return (
     <>
-      <div className="mx-auto flex w-full max-w-[max(16rem,min(100%,calc(100dvh_-_9rem)))] gap-1.5 sm:gap-2 lg:max-w-[max(24rem,calc(100dvh_-_9rem))]">
+      <div className="mx-auto flex w-full max-w-[max(16rem,min(100%,calc(100dvh_-_14rem)))] gap-1.5 sm:gap-2 lg:max-w-[max(24rem,calc(100dvh_-_14rem))]">
         {/* Only an evaluation of the position on show gives the bar its text:
             the hook drops results for any other position, and none is shown
             while the engine's line is browsed (the board then shows a
@@ -399,10 +463,18 @@ export default function AnalysisBoard() {
           orientation={orientation}
         />
         <div
-          className={`flex min-w-0 flex-1 flex-col ${
+          className={`flex min-w-0 flex-1 flex-col gap-1.5 ${
             pvView ? "rounded-sm outline-4 outline-offset-2 outline-accent" : ""
           }`}
         >
+        <PlayerStrip
+          side={orientation === "w" ? "b" : "w"}
+          name={namedSide(players, orientation === "w" ? "b" : "w")}
+          detail={sideDetail(players, orientation === "w" ? "b" : "w")}
+          clock={null}
+          toMove={!shownStatus.isOver && shownStatus.turn === (orientation === "w" ? "b" : "w")}
+          accuracy={accuracyOf(orientation === "w" ? "b" : "w")}
+        />
         <Chessboard
           position={shownPosition}
           orientation={orientation}
@@ -415,8 +487,23 @@ export default function AnalysisBoard() {
           onPieceDrop={tryMove}
           onClearSelection={() => setSelected(null)}
           engineArrow={bestMoveArrow}
+          moveArrow={mark?.arrow ? moveSquares : null}
+          moveArrowClassName={mark?.text}
+          moveBadge={
+            mark && moveSquares
+              ? { square: moveSquares.to, glyph: mark.glyph, className: mark.text }
+              : null
+          }
           animatePieces
           slide={slide}
+        />
+        <PlayerStrip
+          side={orientation}
+          name={namedSide(players, orientation)}
+          detail={sideDetail(players, orientation)}
+          clock={null}
+          toMove={!shownStatus.isOver && shownStatus.turn === orientation}
+          accuracy={accuracyOf(orientation)}
         />
         </div>
       </div>
@@ -445,6 +532,14 @@ export default function AnalysisBoard() {
         moveQuality={
           pvView ? null : moveQualityLabel(moveClassification, moveContext?.key ?? null)
         }
+        analyses={gameAnalysis.analyses}
+        gameSummary={gameSummary}
+        analysisDone={gameAnalysis.done}
+        analysisTotal={gameAnalysis.total}
+        analysisRunning={gameAnalysis.running}
+        analysisFailure={gameAnalysis.failure}
+        onAnalyzeGame={gameAnalysis.start}
+        playerNames={players}
         evaluation={evaluation}
         onEvaluate={evaluate}
         autoEvaluate={autoEvaluate}

@@ -206,3 +206,68 @@ describe("classifyMove: missing and invalid evaluations", () => {
     );
   });
 });
+
+describe("great and brilliant moves", () => {
+  it("is great when the best move is far ahead of the second-best", () => {
+    // White keeps +1.00; the alternative only reaches -1.50: a 250 cp gap.
+    const result = classifyMove({
+      before: cp(100),
+      after: cp(100),
+      mover: "w",
+      secondBest: cp(-150),
+    });
+    assert.equal(quality(result), "great");
+  });
+
+  it("is only best when the alternative is close", () => {
+    const result = classifyMove({
+      before: cp(100),
+      after: cp(100),
+      mover: "w",
+      secondBest: cp(0),
+    });
+    assert.equal(quality(result), "best");
+  });
+
+  it("measures the gap for Black from Black's side", () => {
+    // Black is at +1.00; the alternative leaves White ahead by 1.50.
+    const result = classifyMove({
+      before: cp(-100),
+      after: cp(-100),
+      mover: "b",
+      secondBest: cp(150),
+    });
+    assert.equal(quality(result), "great");
+  });
+
+  it("is brilliant for a sacrifice that stays good for the mover", () => {
+    const result = classifyMove({
+      before: cp(100),
+      after: cp(90),
+      mover: "w",
+      sacrificed: true,
+    });
+    assert.equal(quality(result), "brilliant");
+  });
+
+  it("is not brilliant when the mover is no longer better after the sacrifice", () => {
+    const result = classifyMove({
+      before: cp(-50),
+      after: cp(-55),
+      mover: "w",
+      sacrificed: true,
+    });
+    assert.equal(quality(result), "best");
+  });
+
+  it("never changes a move that is not the best", () => {
+    const result = classifyMove({
+      before: cp(100),
+      after: cp(50),
+      mover: "w",
+      sacrificed: true,
+      secondBest: cp(-500),
+    });
+    assert.equal(quality(result), "good");
+  });
+});

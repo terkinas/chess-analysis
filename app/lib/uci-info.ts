@@ -58,13 +58,14 @@ function parseInteger(token: string | undefined): number | null {
 }
 
 /**
- * Parses an `info` line that carries a usable score, or returns null. Lines
- * that are not `info`, have no score (`info string ...`, `info currmove ...`),
- * have a malformed score, report a bound instead of an exact score
- * (`lowerbound` / `upperbound`), or belong to a secondary line (`multipv` 2+)
- * are all ignored rather than guessed at.
+ * Parses an `info` line from any principal variation (`multipv`), with the
+ * number of that line. Lines that are not `info`, have no score, have a
+ * malformed score, or report a bound instead of an exact score are ignored
+ * rather than guessed at.
  */
-export function parseInfoLine(line: string): UciInfo | null {
+export function parseScoredInfo(
+  line: string,
+): { multipv: number; info: UciInfo } | null {
   const tokens = line.trim().split(/\s+/);
   if (tokens[0] !== "info") return null;
   // Free text after `string` can contain anything, including the word "score".
@@ -107,9 +108,19 @@ export function parseInfoLine(line: string): UciInfo | null {
     }
   }
 
-  if (!score || isBound || multipv !== 1) return null;
+  if (!score || isBound) return null;
   if (depth === null || depth < 0) return null;
-  return { depth, score, pv };
+  return { multipv, info: { depth, score, pv } };
+}
+
+/**
+ * Parses an `info` line that carries a usable score for the best line
+ * (`multipv` 1), or returns null. Lines of secondary lines (`multipv` 2+) are
+ * ignored here; see `parseScoredInfo` to read them.
+ */
+export function parseInfoLine(line: string): UciInfo | null {
+  const parsed = parseScoredInfo(line);
+  return parsed && parsed.multipv === 1 ? parsed.info : null;
 }
 
 /** The side to move in a FEN, or null if the FEN has no valid turn field. */

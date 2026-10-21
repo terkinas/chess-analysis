@@ -1,6 +1,7 @@
 // What the move-quality label says, as plain data, so the wording and the
 // "never show another move's label" rule can be tested without rendering.
 
+import { markFor } from "./quality-style.ts";
 import type {
   ClassificationReason,
   MoveClassification,
@@ -21,10 +22,13 @@ export type MoveClassificationStatus =
   | { phase: "error"; contextKey: string; message: string };
 
 export type LabelTone =
+  | "brilliant"
+  | "great"
   | "best"
   | "good"
   | "inaccuracy"
   | "mistake"
+  | "blunder"
   | "pending"
   | "unavailable";
 
@@ -34,11 +38,15 @@ export type MoveQualityLabel = {
   tone: LabelTone;
   /** A fuller sentence for tooltips and screen readers. */
   description: string;
+  /** The annotation mark (such as "??"), or null for unmarked qualities. */
+  glyph: string | null;
   /** True while the label is a placeholder rather than a result. */
   pending: boolean;
 };
 
 const QUALITY_TEXT: Record<MoveQuality, string> = {
+  brilliant: "Brilliant",
+  great: "Great",
   best: "Best",
   excellent: "Excellent",
   good: "Good",
@@ -48,12 +56,14 @@ const QUALITY_TEXT: Record<MoveQuality, string> = {
 };
 
 const QUALITY_TONE: Record<MoveQuality, LabelTone> = {
+  brilliant: "brilliant",
+  great: "great",
   best: "best",
   excellent: "best",
   good: "good",
   inaccuracy: "inaccuracy",
   mistake: "mistake",
-  blunder: "mistake",
+  blunder: "blunder",
 };
 
 const REASON_TEXT: Record<ClassificationReason, string> = {
@@ -74,6 +84,7 @@ const UNAVAILABLE_TEXT: Record<UnavailableReason, string> = {
 const PENDING: MoveQualityLabel = {
   text: "Classifying…",
   tone: "pending",
+  glyph: null,
   description: "Evaluating the positions before and after this move",
   pending: true,
 };
@@ -101,6 +112,7 @@ export function moveQualityLabel(
     return {
       text: "Unavailable",
       tone: "unavailable",
+      glyph: null,
       description: `Move quality is unavailable: ${status.message}`,
       pending: false,
     };
@@ -111,6 +123,7 @@ export function moveQualityLabel(
     return {
       text: "Unavailable",
       tone: "unavailable",
+      glyph: null,
       description: `Move quality is unavailable: ${UNAVAILABLE_TEXT[result.reason]}`,
       pending: false,
     };
@@ -126,6 +139,7 @@ export function moveQualityLabel(
   return {
     text,
     tone: QUALITY_TONE[result.quality],
+    glyph: markFor(result.quality)?.glyph ?? null,
     description: detail ? `${text}: ${detail}` : text,
     pending: false,
   };

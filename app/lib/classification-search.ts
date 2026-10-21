@@ -7,6 +7,7 @@
 // against it, because scores from different depths are not comparable.
 
 import { resolveUciMove } from "./chess-game.ts";
+import { materialBalanceChange } from "./material.ts";
 import {
   evaluationCacheKey,
   type EvaluationCache,
@@ -54,6 +55,78 @@ export function classificationScore(
   );
 }
 
+/**
+ * Everything the classifier needs about a move at `limit`: the scores before
+ * and after, the second-best score before the move (null if not searched), and
+ * whether the move is a sacrifice in the engine's best line. When the move is
+ * the engine's best move, `after` equals `before` (see `classificationDetails`).
+ */
+export type ClassificationDetails = {
+  before: WhiteScore | null;
+  after: WhiteScore | null;
+  secondBest: WhiteScore | null;
+  sacrificed: boolean;
+};
+
+/**
+ * True when `context.san` is the engine's best move and the best line gives up
+ * at least two pawns of material for the mover (judged after the opponent's
+ * reply and the mover's next move) that it does not win back straight away.
+ */
+export function isSacrificeLine(
+  evaluation: PositionEvaluation,
+  context: MoveContext,
+): boolean {
+  if (evaluation.bestMoveSan !== context.san) return false;
+  const moves = evaluation.pv.moves;
+  for (let plies = 1; plies <= Math.min(2, moves.length - 1); plies++) {
+    const change = materialBalanceChange(
+      context.beforeFen,
+      moves[plies].fen,
+      context.mover,
+    );
+    if (change !== null && change <= -2) return true;
+  }
+  return false;
+}
+
+/** The details of a move at `limit`, all read from the cache (see `ClassificationDetails`). */
+export function classificationDetails(
+  cache: EvaluationCache,
+  context: MoveContext,
+  limit: SearchLimit,
+): ClassificationDetails {
+  const beforeEvaluation =
+    terminalWhiteScore(context.beforeFen) === null
+      ? (cache.get(evaluationCacheKey(context.beforeFen, limit)) ?? null)
+      : null;
+  const before = classificationScore(cache, context.beforeFen, limit);
+  const searchedAfter = classificationScore(cache, context.afterFen, limit);
+
+  // The engine's own best move keeps the score of the position before it, by
+  // definition. Comparing it with a separate search of the position after the
+  // move is unfair: that search starts one ply deeper into the same line, so at
+  // a shallow depth its score drifts from the "before" score by tens of
+  // centipawns and the best move gets labelled an inaccuracy. So when the move
+  // played is the best move of the "before" search, its score after the move is
+  // that same score (loss 0). A finished game (mate / stalemate) keeps its exact
+  // terminal score.
+  const playedEngineBest =
+    beforeEvaluation !== null && beforeEvaluation.bestMoveSan === context.san;
+  const after =
+    terminalWhiteScore(context.afterFen) ??
+    (playedEngineBest ? beforeEvaluation.score : searchedAfter);
+
+  return {
+    before,
+    after,
+    secondBest: beforeEvaluation?.secondScore ?? null,
+    sacrificed: beforeEvaluation
+      ? isSacrificeLine(beforeEvaluation, context)
+      : false,
+  };
+}
+
 /** The before and after scores of a move at `limit`; either may be null. */
 export function classificationScores(
   cache: EvaluationCache,
@@ -69,7 +142,7 @@ export function classificationScores(
 /** Turns a finished search into a validated evaluation; throws if it is unusable. */
 export function toPositionEvaluation(
   fen: string,
-  { best, info }: AnalysisResult,
+  { best, info, second }: AnalysisResult,
 ): PositionEvaluation {
   const turn = turnFromFen(fen);
   const legal = resolveUciMove(fen, best.move);
@@ -83,6 +156,7 @@ export function toPositionEvaluation(
     bestMoveSan: legal.san,
     bestMoveUci: best.move.uci,
     pv: buildPvLine(fen, choosePv(best.move.uci, info.pv)),
+    secondScore: second ? toWhiteScore(second.score, turn) : null,
   };
 }
 

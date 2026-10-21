@@ -27,6 +27,12 @@ export type PositionEvaluation = {
   score: WhiteScore;
   /** Search depth the score was reached at. */
   depth: number;
+  /**
+   * The score of the second-best move, from White's point of view, when the
+   * search looked at two lines. Null when the position has only one legal
+   * move, or when the search did not ask for two lines.
+   */
+  secondScore?: WhiteScore | null;
   /** The engine's suggested move, validated by chess.js. Never played automatically. */
   bestMoveSan: string;
   bestMoveUci: string;

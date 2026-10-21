@@ -65,6 +65,8 @@ type PlayerStripProps = {
   clock: ClockState | null;
   /** True while it is this player's turn in a live game. */
   toMove: boolean;
+  /** Game-review accuracy (0–100) shown where a clock would be; null for none. */
+  accuracy?: number | null;
 };
 
 export default function PlayerStrip({
@@ -73,6 +75,7 @@ export default function PlayerStrip({
   detail,
   clock,
   toMove,
+  accuracy = null,
 }: PlayerStripProps) {
   return (
     <div
@@ -95,6 +98,15 @@ export default function PlayerStrip({
         </p>
       </div>
       {clock && <ClockFace clock={clock} side={side} />}
+      {!clock && accuracy !== null && (
+        <span
+          title="Accuracy over the moves judged so far"
+          aria-label={`Accuracy ${accuracy.toFixed(1)} percent`}
+          className="rounded bg-background px-2 py-0.5 font-mono text-sm font-semibold tabular-nums text-foreground"
+        >
+          {accuracy.toFixed(1)}%
+        </span>
+      )}
     </div>
   );
 }
