@@ -56,6 +56,7 @@ import { usePositionAnalysis } from "../lib/use-position-analysis";
 import AnalysisPanel from "./AnalysisPanel";
 import Chessboard from "./Chessboard";
 import EvalBar from "./EvalBar";
+import GameNavigation from "./GameNavigation";
 import PgnImportDialog from "./PgnImportDialog";
 import PlayerStrip from "./PlayerStrip";
 import PromotionPicker from "./PromotionPicker";
@@ -178,8 +179,8 @@ export default function AnalysisBoard() {
     setPlayers({ white: result.white, black: result.black });
   }, []);
   const fen = useMemo(() => game.fen(), [game]);
-  // Off by default: evaluate each position automatically, at a shallow depth.
-  const [autoEvaluate, setAutoEvaluate] = useState(false);
+  // On by default: evaluate each position automatically, at a shallow depth (the user can switch it off).
+  const [autoEvaluate, setAutoEvaluate] = useState(true);
   // Completed evaluations, shared so no position is searched twice.
   const evaluationStore = useEvaluationCache();
   const {
@@ -451,7 +452,7 @@ export default function AnalysisBoard() {
 
   return (
     <>
-      <div className="mx-auto flex w-full max-w-[max(16rem,min(100%,calc(100dvh_-_14rem)))] gap-1.5 sm:gap-2 lg:max-w-[max(24rem,calc(100dvh_-_14rem))]">
+      <div className="mx-auto flex w-full max-w-[max(16rem,min(100%,calc(100dvh_-_17.5rem)))] gap-1.5 sm:gap-2 lg:max-w-[max(24rem,calc(100dvh_-_14rem))]">
         {/* Only an evaluation of the position on show gives the bar its text:
             the hook drops results for any other position, and none is shown
             while the engine's line is browsed (the board then shows a
@@ -504,6 +505,16 @@ export default function AnalysisBoard() {
           clock={null}
           toMove={!shownStatus.isOver && shownStatus.turn === orientation}
           accuracy={accuracyOf(orientation)}
+        />
+        {/* Small screens: Previous/Next right under the board, so stepping
+            through the game never needs a scroll. Large screens keep them in
+            the panel. */}
+        <GameNavigation
+          ply={ply}
+          total={moves.length}
+          onSelectPly={selectPly}
+          onReset={reset}
+          className="lg:hidden"
         />
         </div>
       </div>

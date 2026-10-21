@@ -6,6 +6,7 @@ import type { LineOption } from "../lib/analysis-session";
 import type { AnalyzedMove, GameSummary } from "../lib/game-analysis";
 import { NOTABLE_ORDER, QUALITY_MARK, markFor } from "../lib/quality-style";
 import EvalGraph from "./EvalGraph";
+import GameNavigation from "./GameNavigation";
 import type { MoveQuality } from "../lib/move-classification";
 import type { LabelTone, MoveQualityLabel } from "../lib/move-quality-label";
 import { describeWhiteScore, formatWhiteScore } from "../lib/uci-info";
@@ -296,9 +297,6 @@ const SMALL_BUTTON =
 const PRIMARY_SMALL =
   "rounded-md border border-accent bg-accent px-2 py-1.5 text-xs font-medium text-background transition-colors hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-disabled:hover:bg-accent";
 
-const BUTTON =
-  "rounded-md border border-line px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-transparent";
-
 type MoveButtonProps = {
   san: string;
   /** 1-based ply of this move. */
@@ -544,8 +542,6 @@ export default function AnalysisPanel({
   const evaluateRef = useRef<HTMLButtonElement>(null);
   const pairs = toMovePairs(moves);
   const hasMoves = moves.length > 0;
-  const atStart = ply === 0;
-  const atEnd = ply === moves.length;
   const evaluating =
     evaluation.phase === "loading" || evaluation.phase === "thinking";
   const activeOption = lines.find((option) => option.id === activeLineId);
@@ -950,47 +946,15 @@ export default function AnalysisPanel({
         </div>
       </section>
 
-      <div
-        role="group"
-        aria-label="Game navigation"
-        className="sticky bottom-0 grid grid-cols-3 gap-2 border-t border-line bg-surface p-4"
-      >
-        {/* aria-disabled rather than disabled: a button the keyboard has
-            just used must not vanish from the tab order at either end of the
-            line, which would drop focus back to the page. */}
-        <button
-          type="button"
-          aria-label="Previous game move"
-          aria-disabled={atStart}
-          onClick={() => {
-            if (!atStart) onSelectPly(ply - 1);
-          }}
-          className={BUTTON}
-        >
-          <span aria-hidden>‹ </span>Previous
-        </button>
-        <button
-          type="button"
-          aria-label="Next game move"
-          aria-disabled={atEnd}
-          onClick={() => {
-            if (!atEnd) onSelectPly(ply + 1);
-          }}
-          className={BUTTON}
-        >
-          Next<span aria-hidden> ›</span>
-        </button>
-        <button
-          type="button"
-          aria-disabled={!hasMoves}
-          onClick={() => {
-            if (hasMoves) onReset();
-          }}
-          className={BUTTON}
-        >
-          Reset
-        </button>
-      </div>
+      {/* On small screens the same buttons sit under the board instead (see
+          AnalysisBoard), so they are visible together with it. */}
+      <GameNavigation
+        ply={ply}
+        total={moves.length}
+        onSelectPly={onSelectPly}
+        onReset={onReset}
+        className="sticky bottom-0 hidden border-t border-line bg-surface p-4 lg:grid"
+      />
     </aside>
   );
 }

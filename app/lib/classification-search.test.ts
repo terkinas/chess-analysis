@@ -64,6 +64,7 @@ function fakeEngine(
       return {
         best: { move: parsed },
         info: { depth: 8, score: { kind: "cp", value }, pv: [uci] },
+        second: null,
       };
     },
   };
