@@ -18,6 +18,7 @@ import {
   type AnalysisSession,
 } from "../lib/analysis-session";
 import {
+  findCastlingDrop,
   findLegalMoves,
   getAnalysisStatus,
   getDestinations,
@@ -51,7 +52,12 @@ import { parseUciMove } from "../lib/stockfish-engine";
 import type { WhiteScore } from "../lib/uci-info";
 import { useEvaluationCache } from "../lib/use-evaluation-cache";
 import { useGameAnalysis } from "../lib/use-game-analysis";
-import { useMoveClassification } from "../lib/use-move-classification";
+import {
+  CLASSIFICATION_LIMIT,
+  useMoveClassification,
+} from "../lib/use-move-classification";
+import { lookupEvaluation } from "../lib/evaluation-cache";
+import { buildMoveExplanation, type LineKind } from "../lib/move-explanation";
 import { usePositionAnalysis } from "../lib/use-position-analysis";
 import AnalysisPanel from "./AnalysisPanel";
 import Chessboard from "./Chessboard";
@@ -60,6 +66,9 @@ import GameNavigation from "./GameNavigation";
 import PgnImportDialog from "./PgnImportDialog";
 import PlayerStrip from "./PlayerStrip";
 import PromotionPicker from "./PromotionPicker";
+
+/** Pause between the moves of the engine's reply shown by "Show why". */
+const AUTOPLAY_DELAY_MS = 500;
 
 const NO_DESTINATIONS: Destinations = new Map();
 
@@ -205,6 +214,32 @@ export default function AnalysisBoard() {
     store: evaluationStore,
   });
 
+  // Why the move at the cursor got its rating, from the evaluations the
+  // classification already used (read from the shared cache, never searched).
+  const explanation = useMemo(() => {
+    if (
+      !moveContext ||
+      moveClassification.phase !== "done" ||
+      moveClassification.contextKey !== moveContext.key
+    ) {
+      return null;
+    }
+    return buildMoveExplanation({
+      context: moveContext,
+      classification: moveClassification.classification,
+      before: lookupEvaluation(
+        evaluationStore.cache,
+        moveContext.beforeFen,
+        [CLASSIFICATION_LIMIT],
+      ),
+      after: lookupEvaluation(
+        evaluationStore.cache,
+        moveContext.afterFen,
+        [CLASSIFICATION_LIMIT],
+      ),
+    });
+  }, [moveContext, moveClassification, evaluationStore.cache]);
+
   // Every move of the shown line, judged on request (see `useGameAnalysis`).
   const lineContexts = useMemo(() => moveContextsForLine(moves), [moves]);
   const gameAnalysis = useGameAnalysis({
@@ -254,10 +289,36 @@ export default function AnalysisBoard() {
     evaluation.phase === "done" ? evaluation.evaluation.pv : null;
   const pvView = activePvView(pvViewState, currentPv);
   const pvFen = pvView ? pvFenAt(pvView.pv, pvView.index) : null;
+
+  // One of the explanation's lines on the board ("Why this rating?"). Like the
+  // engine-line view it is temporary and never touches `line`; it only counts
+  // while it belongs to the explanation of the move now at the cursor.
+  // "Show why" plays the engine's reply on the board one move at a time. It
+  // only counts while the cursor is still on that line and short of `end`, and
+  // any move of the user's own (stepping, picking a line, playing a move) ends
+  // it, because each of those clears the transient state.
+  const [autoplay, setAutoplay] = useState<{
+    lineId: number;
+    end: number;
+  } | null>(null);
+  const [lineViewState, setLineViewState] = useState<{
+    key: string;
+    kind: LineKind;
+    index: number;
+  } | null>(null);
+  const explainView =
+    explanation && lineViewState && lineViewState.key === explanation.key
+      ? lineViewState
+      : null;
+  const explainLine = explainView ? explanation?.lines[explainView.kind] ?? null : null;
+  const explainFen =
+    explainLine && explainView ? pvFenAt(explainLine.pv, explainView.index) : null;
+  const showingLine = pvView !== null || explainFen !== null;
+  const shownFen = explainFen ?? pvFen;
   // The move on the board, marked when game analysis found it noteworthy: a
   // badge on the square it landed on, and for the bad ones an arrow as well.
   const mark =
-    pvView || ply === 0 ? null : markFor(gameAnalysis.analyses[ply - 1]?.quality);
+    showingLine || ply === 0 ? null : markFor(gameAnalysis.analyses[ply - 1]?.quality);
   const moveSquares = useMemo(() => {
     if (!moveContext || !mark) return null;
     try {
@@ -271,7 +332,7 @@ export default function AnalysisBoard() {
   // on the board: `evaluation` is already discarded when the position, a reset
   // or an import changes it, and the arrow is hidden while the PV view shows
   // some other position. Read-only: nothing is ever played from it.
-  const inPvView = pvView !== null;
+  const inPvView = showingLine;
   const bestMoveUci =
     evaluation.phase === "done" ? evaluation.evaluation.bestMoveUci : null;
   const bestMoveArrow = useMemo(() => {
@@ -280,9 +341,16 @@ export default function AnalysisBoard() {
     const move = parsed ? resolveUciMove(fen, parsed) : null;
     return move ? { from: move.from, to: move.to } : null;
   }, [bestMoveUci, inPvView, fen]);
+  // A piece held with the pointer is dropped without moving when the position
+  // on the board changes under it (a step through the game, an engine line).
+  const dragKey = `${fen}|${showingLine}`;
+  const [dragCancel, setDragCancel] = useState({ key: dragKey, signal: 0 });
+  if (dragCancel.key !== dragKey) {
+    setDragCancel({ key: dragKey, signal: dragCancel.signal + 1 });
+  }
   const shownGame = useMemo(
-    () => (pvFen ? new Chess(pvFen) : game),
-    [pvFen, game],
+    () => (shownFen ? new Chess(shownFen) : game),
+    [shownFen, game],
   );
   const shownStatus = useMemo(
     () => getAnalysisStatus(shownGame),
@@ -300,6 +368,28 @@ export default function AnalysisBoard() {
     setSelected(null);
     setPendingPromotion(null);
     setPvViewState(null);
+    setLineViewState(null);
+    setAutoplay(null);
+  }
+
+  function showExplanationLine(kind: LineKind) {
+    if (!explanation?.lines[kind]) return;
+    setSelected(null);
+    setPendingPromotion(null);
+    setPvViewState(null);
+    setSlide(null);
+    setLineViewState({ key: explanation.key, kind, index: 1 });
+  }
+
+  function selectExplanationLineIndex(index: number) {
+    if (!explainView || !explainLine) return;
+    const clamped = Math.min(explainLine.pv.moves.length, Math.max(0, index));
+    setLineViewState({ ...explainView, index: clamped });
+  }
+
+  function stepExplanationLine(delta: 1 | -1) {
+    if (!explainView) return;
+    selectExplanationLineIndex(explainView.index + delta);
   }
 
   function stepPv(delta: 1 | -1) {
@@ -366,9 +456,63 @@ export default function AnalysisBoard() {
     );
   }
 
+  // For a move rated an inaccuracy, mistake or blunder: the engine's best
+  // continuation after it, which shows how the move gets punished. It is added
+  // as a variation (the main line is never cut), and the cursor stays on the
+  // first reply so Next walks through it.
+  const mistakeLinePv =
+    explanation &&
+    ["inaccuracy", "mistake", "blunder"].includes(explanation.quality) &&
+    moveContext &&
+    !showingLine &&
+    fen === moveContext.afterFen &&
+    explanation.lines.next &&
+    pvMatchesPosition(explanation.lines.next.pv, fen)
+      ? explanation.lines.next.pv
+      : null;
+
+  function addMistakeLine() {
+    if (!mistakeLinePv || !moveContext) return;
+    const replayed = replayPvOnto(fen, mistakeLinePv, mistakeLinePv.moves.length);
+    if (!replayed || replayed.sans.length === 0) return;
+    const next = commitMoves(replayed.sans);
+    const added = replayed.sans.length;
+    // The cursor stays on the move being explained; the reply is then played
+    // out on the board, one move every AUTOPLAY_DELAY_MS.
+    setSession(goToPlyInSession(next, moveContext.ply));
+    setAutoplay({ lineId: next.activeId, end: next.ply });
+    setImportNotice(
+      `Playing the engine's reply (${added} ${added === 1 ? "move" : "moves"}) in ${
+        isMainActive(next) ? "the main line" : lineName(next, next.activeId)
+      } to show how ${moveContext.san} is punished.`,
+    );
+  }
+
+  const autoplaying =
+    autoplay !== null && session.activeId === autoplay.lineId && ply < autoplay.end;
+  useEffect(() => {
+    if (!autoplaying) return;
+    const timer = setTimeout(() => {
+      const next = goToPlyInSession(session, ply + 1);
+      const slides = getStepSlides(moves, ply, next.ply);
+      if (slides.length > 0) {
+        slideId.current += 1;
+        setSlide({ id: slideId.current, moves: slides, duration: 350 });
+      } else {
+        setSlide(null);
+      }
+      setSelected(null);
+      setSession(next);
+    }, AUTOPLAY_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [autoplaying, session, ply, moves]);
+
   function tryMove(from: Square, to: Square) {
-    if (status.isOver || pvView) return;
-    const legal = findLegalMoves(game, from, to);
+    if (status.isOver || showingLine) return;
+    // A king dropped far along its rank, or on its own rook, means castling.
+    // It is only tried when the drop is not already an ordinary legal move.
+    let legal = findLegalMoves(game, from, to);
+    if (legal.length === 0) legal = findCastlingDrop(game, from, to);
     if (legal.length === 0) return;
     if (isPromotion(legal)) {
       setPendingPromotion({ from, to });
@@ -390,7 +534,7 @@ export default function AnalysisBoard() {
   // Not `canSelect`: that treats every draw as the end of the game, but here
   // the side to move can always move unless it is checkmate or stalemate.
   function handleSquareActivate(square: Square) {
-    if (status.isOver || pvView) return;
+    if (status.isOver || showingLine) return;
 
     if (selected && destinations.has(square)) {
       tryMove(selected, square);
@@ -406,7 +550,7 @@ export default function AnalysisBoard() {
   // board (it shows a different position), snap.
   function selectPly(target: number) {
     const next = goToPlyInSession(session, target);
-    const slides = pvView ? [] : getStepSlides(moves, ply, next.ply);
+    const slides = showingLine ? [] : getStepSlides(moves, ply, next.ply);
     if (slides.length > 0) {
       slideId.current += 1;
       setSlide({ id: slideId.current, moves: slides, duration: 150 });
@@ -465,7 +609,7 @@ export default function AnalysisBoard() {
         />
         <div
           className={`flex min-w-0 flex-1 flex-col gap-1.5 ${
-            pvView ? "rounded-sm outline-4 outline-offset-2 outline-accent" : ""
+            showingLine ? "rounded-sm outline-4 outline-offset-2 outline-accent" : ""
           }`}
         >
         <PlayerStrip
@@ -480,13 +624,16 @@ export default function AnalysisBoard() {
           position={shownPosition}
           orientation={orientation}
           turn={shownStatus.turn}
-          interactive={!status.isOver && !pvView}
+          interactive={!status.isOver && !showingLine}
           selected={selected}
           destinations={destinations}
           onSquareActivate={handleSquareActivate}
           onPieceDragStart={setSelected}
           onPieceDrop={tryMove}
           onClearSelection={() => setSelected(null)}
+          holdColor={status.turn}
+          holdEnabled={!status.isOver && !showingLine}
+          cancelDragSignal={dragCancel.signal}
           engineArrow={bestMoveArrow}
           moveArrow={mark?.arrow ? moveSquares : null}
           moveArrowClassName={mark?.text}
@@ -521,7 +668,7 @@ export default function AnalysisBoard() {
       <AnalysisPanel
         turn={shownStatus.turn}
         statusText={shownStatus.text}
-        statusNote={pvView ? undefined : shownStatus.note}
+        statusNote={showingLine ? undefined : shownStatus.note}
         showTurn={!shownStatus.isOver}
         moves={moves}
         ply={ply}
@@ -541,8 +688,19 @@ export default function AnalysisBoard() {
         importButtonRef={importButtonRef}
         importNotice={importNotice}
         moveQuality={
-          pvView ? null : moveQualityLabel(moveClassification, moveContext?.key ?? null)
+          showingLine ? null : moveQualityLabel(moveClassification, moveContext?.key ?? null)
         }
+        explanation={explanation}
+        mistakeLine={
+          mistakeLinePv
+            ? { count: mistakeLinePv.moves.length, onAdd: addMistakeLine }
+            : null
+        }
+        explanationLine={explainView ? { kind: explainView.kind, index: explainView.index } : null}
+        onShowExplanationLine={showExplanationLine}
+        onSelectExplanationLineIndex={selectExplanationLineIndex}
+        onStepExplanationLine={stepExplanationLine}
+        onCloseExplanationLine={() => setLineViewState(null)}
         analyses={gameAnalysis.analyses}
         gameSummary={gameSummary}
         analysisDone={gameAnalysis.done}

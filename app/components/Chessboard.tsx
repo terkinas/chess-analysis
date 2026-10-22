@@ -49,6 +49,12 @@ type ChessboardProps = {
   /** Squares of the last move in the position shown; omitted for no highlight. */
   lastMove?: LastMove | null;
   /**
+   * Premoves waiting for the opponent to move, in the order they will be
+   * played. The squares of every one are tinted red; `position` is expected to
+   * already show the pieces where the premoves will leave them.
+   */
+  premoves?: readonly { from: Square; to: Square }[];
+  /**
    * Opt-in "hold" dragging, driven by pointer events instead of native
    * drag-and-drop. The side given here can pick up its own pieces at any time
    * while `holdEnabled` is true, even when it is not `turn`; the piece stays on
@@ -104,6 +110,20 @@ type ChessboardProps = {
 };
 
 export type { ArrowAnnotation };
+
+const NO_PREMOVES: readonly { from: Square; to: Square }[] = [];
+
+/** Which end of a premove each marked square is (a square used twice counts as "to"). */
+function premoveRoles(
+  premoves: readonly { from: Square; to: Square }[],
+): ReadonlyMap<Square, "from" | "to"> {
+  const roles = new Map<Square, "from" | "to">();
+  for (const { from, to } of premoves) {
+    if (!roles.has(from)) roles.set(from, "from");
+    roles.set(to, "to");
+  }
+  return roles;
+}
 
 const sameArrow = (a: ArrowAnnotation, b: ArrowAnnotation) =>
   a.from === b.from && a.to === b.to;
@@ -161,11 +181,13 @@ function describeSquare(
   isSelected: boolean,
   destination: { capture: boolean } | undefined,
   lastMoveRole?: "from" | "to",
+  premoveRole?: "from" | "to",
 ): string {
   const parts: string[] = [square, piece ? describePiece(piece) : "empty"];
   if (isSelected) parts.push("selected");
   if (destination) parts.push(destination.capture ? "capture" : "legal move");
   if (lastMoveRole) parts.push(`last move ${lastMoveRole}`);
+  if (premoveRole) parts.push(`premove ${premoveRole}`);
   return parts.join(", ");
 }
 
@@ -181,6 +203,7 @@ export default function Chessboard({
   onPieceDrop,
   onClearSelection,
   lastMove = null,
+  premoves = NO_PREMOVES,
   holdColor,
   holdEnabled = false,
   cancelDragSignal = 0,
@@ -199,6 +222,7 @@ export default function Chessboard({
 }: ChessboardProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const dragFrom = useRef<Square | null>(null);
+  const premoveRoleOf = premoveRoles(premoves);
   const [focusSquare, setFocusSquare] = useState<Square>(INITIAL_FOCUS);
 
   // Hold-drag state. `heldRef` is the source of truth for event handlers (it
@@ -603,6 +627,7 @@ export default function Chessboard({
                 : lastMove?.to === square
                   ? "to"
                   : undefined;
+            const premoveRole = premoveRoleOf.get(square);
             const canPick = interactive && piece?.[0] === turn;
             const isClickable = canPick || destination !== undefined;
             const canHold =
@@ -621,6 +646,7 @@ export default function Chessboard({
                   isSelected,
                   destination,
                   lastMoveRole,
+                  premoveRole,
                 )}
                 aria-selected={isSelected}
                 tabIndex={square === focusSquare ? 0 : -1}
@@ -660,6 +686,13 @@ export default function Chessboard({
                   <span
                     aria-hidden
                     className="pointer-events-none absolute inset-0 bg-board-last/45"
+                  />
+                )}
+                {premoveRole && (
+                  <span
+                    aria-hidden
+                    data-premove={premoveRole}
+                    className="pointer-events-none absolute inset-0 bg-red-600/55"
                   />
                 )}
                 {highlights?.includes(square) && (

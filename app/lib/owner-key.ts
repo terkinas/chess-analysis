@@ -12,15 +12,32 @@ import {
 
 const DEV_SECRET = "gambit-dev-only-secret";
 
+let warnedAboutFallback = false;
+
 function secret(): string {
-  const configured = process.env.HISTORY_OWNER_SECRET;
+  // `.env.example` ships `HISTORY_OWNER_SECRET=""`, and hosts sometimes keep a
+  // blank value, so an empty or whitespace-only value counts as not set.
+  const configured = process.env.HISTORY_OWNER_SECRET?.trim();
   if (configured) return configured;
-  // Without a secret anyone could mint cookies the server would accept, so a
-  // real deployment must set one.
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("HISTORY_OWNER_SECRET is not set.");
+  if (process.env.NODE_ENV !== "production") return DEV_SECRET;
+
+  // Production without a dedicated secret. Anyone who could mint cookies the
+  // server accepts could read other visitors' history, so a fixed, public
+  // fallback is out. DATABASE_URL carries the database password: it is secret,
+  // server-only and already required, so a key derived from it cannot be
+  // guessed by a visitor. Set HISTORY_OWNER_SECRET to use a dedicated key
+  // (changing either value detaches visitors from their existing history).
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (databaseUrl) {
+    if (!warnedAboutFallback) {
+      warnedAboutFallback = true;
+      console.warn(
+        "HISTORY_OWNER_SECRET is not set or empty; deriving the visitor key from DATABASE_URL. Set HISTORY_OWNER_SECRET to use a dedicated key.",
+      );
+    }
+    return `gambit-history-owner-v1:${databaseUrl}`;
   }
-  return DEV_SECRET;
+  throw new Error("HISTORY_OWNER_SECRET is not set (or is empty).");
 }
 
 function isHttps(request: Request): boolean {

@@ -7,6 +7,7 @@ import {
   setPieceSet,
   useAppearance,
 } from "../lib/use-appearance";
+import { setPremoveEnabled, usePreferences } from "../lib/use-preferences";
 import { BoardPreview, PieceStrip } from "./AppearancePreview";
 
 const FOCUS =
@@ -135,6 +136,43 @@ function BoardAppearanceCard() {
   );
 }
 
+function PremoveCard() {
+  const { premove } = usePreferences();
+  return (
+    <Card
+      title="Premoves"
+      description="Choose moves while your opponent is still thinking; the first is played the moment it is your turn."
+    >
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={premove}
+          onChange={(event) => setPremoveEnabled(event.target.checked)}
+          className="peer sr-only"
+        />
+        <span
+          aria-hidden
+          className={`relative mt-0.5 inline-block h-6 w-11 shrink-0 rounded-full border border-line bg-background transition-colors peer-checked:border-accent peer-checked:bg-accent ${FOCUS} after:absolute after:left-0.5 after:top-0.5 after:size-4.5 after:rounded-full after:bg-muted after:transition-transform after:content-[''] peer-checked:after:translate-x-5 peer-checked:after:bg-background`}
+        />
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-foreground">
+            Enable premoves
+          </span>
+          <span className="mt-0.5 block text-xs text-muted">
+            During the opponent&apos;s turn, click or drag one of your pieces to a
+            square. The piece moves to its new square on the board and the
+            squares are marked in red. You can queue several moves in a row: one
+            is played each time it is your turn, as long as it is still legal
+            then. Click any empty square on the board (or use the Cancel
+            button above it) to cancel them all.
+          </span>
+        </span>
+      </label>
+    </Card>
+  );
+}
+
 export default function SettingsPanel() {
   return (
     <>
@@ -142,12 +180,12 @@ export default function SettingsPanel() {
         Settings
       </h1>
       <p className="mt-1 text-sm text-muted">
-        Changes apply instantly to the Play and Analysis boards and are saved on
-        this device.
+        Changes apply instantly and are saved on this device.
       </p>
       <div className="mt-6 grid gap-6 lg:grid-cols-2 lg:items-start [&>*]:min-w-0">
         <PieceDesignCard />
         <BoardAppearanceCard />
+        <PremoveCard />
       </div>
     </>
   );

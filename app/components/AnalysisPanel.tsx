@@ -7,6 +7,8 @@ import type { AnalyzedMove, GameSummary } from "../lib/game-analysis";
 import { NOTABLE_ORDER, QUALITY_MARK, markFor } from "../lib/quality-style";
 import EvalGraph from "./EvalGraph";
 import GameNavigation from "./GameNavigation";
+import MoveExplanationCard from "./MoveExplanationCard";
+import type { LineKind, MoveExplanation } from "../lib/move-explanation";
 import type { MoveQuality } from "../lib/move-classification";
 import type { LabelTone, MoveQualityLabel } from "../lib/move-quality-label";
 import { describeWhiteScore, formatWhiteScore } from "../lib/uci-info";
@@ -53,6 +55,19 @@ type AnalysisPanelProps = {
    * is on the board.
    */
   moveQuality?: MoveQualityLabel | null;
+  /**
+   * Set for a move rated inaccuracy, mistake or blunder when the engine's reply
+   * is known: adds that reply to the analysis as a variation, to show why.
+   */
+  mistakeLine?: { count: number; onAdd: () => void } | null;
+  /** Why the move at the cursor got its rating, once it has one. */
+  explanation?: MoveExplanation | null;
+  /** The explanation's line now on the board, if any. */
+  explanationLine?: { kind: LineKind; index: number } | null;
+  onShowExplanationLine?: (kind: LineKind) => void;
+  onSelectExplanationLineIndex?: (index: number) => void;
+  onStepExplanationLine?: (delta: 1 | -1) => void;
+  onCloseExplanationLine?: () => void;
   /** The judgement of each move of the line, in order; unjudged ones are empty. */
   analyses: readonly (AnalyzedMove | null | undefined)[];
   /** Accuracy and flagged-move counts for each player, over the judged moves. */
@@ -517,6 +532,13 @@ export default function AnalysisPanel({
   importButtonRef,
   importNotice,
   moveQuality,
+  mistakeLine,
+  explanation,
+  explanationLine,
+  onShowExplanationLine,
+  onSelectExplanationLineIndex,
+  onStepExplanationLine,
+  onCloseExplanationLine,
   analyses,
   gameSummary,
   analysisDone,
@@ -609,6 +631,19 @@ export default function AnalysisPanel({
                 <>
                   <span aria-hidden>·</span>
                   <MoveQualityBadge label={moveQuality} />
+                  {mistakeLine && (
+                    <button
+                      type="button"
+                      onClick={mistakeLine.onAdd}
+                      title="Adds the engine's best reply to the analysis as a variation, so you can step through how this move is punished"
+                      className="rounded-md border border-line px-2 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Show why
+                      <span className="sr-only">
+                        {` (adds ${mistakeLine.count} engine ${mistakeLine.count === 1 ? "move" : "moves"} as a variation)`}
+                      </span>
+                    </button>
+                  )}
                 </>
               )}
             </p>
@@ -618,6 +653,18 @@ export default function AnalysisPanel({
           </div>
         </div>
       </div>
+
+      {explanation && (
+        <MoveExplanationCard
+          key={explanation.key}
+          explanation={explanation}
+          lineView={explanationLine ?? null}
+          onShowLine={(kind) => onShowExplanationLine?.(kind)}
+          onSelectLineIndex={(index) => onSelectExplanationLineIndex?.(index)}
+          onStepLine={(delta) => onStepExplanationLine?.(delta)}
+          onCloseLine={() => onCloseExplanationLine?.()}
+        />
+      )}
 
       <section
         aria-labelledby="analysis-review-heading"

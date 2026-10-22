@@ -38,6 +38,15 @@ import { playMoveSound, primeMoveSound } from "../lib/move-sound";
 import { useChessClock } from "../lib/use-chess-clock";
 import { useGameSaver, type SaveStatus } from "../lib/use-game-saver";
 import { useEngineOpponent } from "../lib/use-engine-opponent";
+import {
+  addPremove,
+  applyPremoves,
+  keepPossiblePremoves,
+  premoveDestinations,
+  resolvePremove,
+  type Premove,
+} from "../lib/premove";
+import { usePreferences } from "../lib/use-preferences";
 import Chessboard, { type ArrowAnnotation } from "./Chessboard";
 import Dialog from "./Dialog";
 import GameOverDialog from "./GameOverDialog";
@@ -47,6 +56,7 @@ import PlayerStrip from "./PlayerStrip";
 import PromotionPicker from "./PromotionPicker";
 
 const NO_DESTINATIONS: Destinations = new Map();
+const NO_PREMOVES: readonly Premove[] = [];
 
 type PendingPromotion = { from: Square; to: Square };
 
@@ -108,6 +118,13 @@ export default function Game() {
   const slideId = useRef(0);
   const [highlights, setHighlights] = useState<readonly Square[]>([]);
   const [dragCancelSignal, setDragCancelSignal] = useState(0);
+  // Moves chosen during Stockfish's turn (when the setting allows it), in the
+  // order they will be played. They are only a plan: the first is played once
+  // it is the human's turn, if still legal, then the next after Stockfish's
+  // following reply, and so on. Each was chosen on the board the earlier ones
+  // lead to (see `premoveBoard`).
+  const [premoves, setPremoves] = useState<readonly Premove[]>([]);
+  const { premove: premoveEnabled } = usePreferences();
 
   const game = useMemo(() => replay(moves), [moves]);
   const status = useMemo(
@@ -129,17 +146,6 @@ export default function Game() {
   const position = useMemo(() => toPosition(shownGame), [shownGame]);
   // Follows the position on show, so it also tracks history browsing.
   const lastMove = useMemo(() => getLastMove(shownGame), [shownGame]);
-  // A held piece takes over the hints. On Stockfish's turn the side to move is
-  // not the holder's, so chess.js reports no destinations: no premove hints.
-  const hintFrom = heldFrom ?? selected;
-  const destinations = useMemo(
-    () =>
-      hintFrom && !isViewing
-        ? getDestinations(game, hintFrom)
-        : NO_DESTINATIONS,
-    [game, hintFrom, isViewing],
-  );
-
   const engineColor: Color = humanColor === "w" ? "b" : "w";
   const isEngineTurn = playing && !status.isOver && status.turn === engineColor;
   // The human can only move on their own turn, in the live position.
@@ -149,6 +155,39 @@ export default function Game() {
   // The human may hold a piece whenever a live game is running, even while
   // Stockfish is thinking.
   const canHold = playing && !status.isOver && !isViewing;
+
+  // With premoves on, the human may also choose a move during Stockfish's turn.
+  const canPremove = premoveEnabled && isEngineTurn && !isViewing;
+  const activePremoves = premoveEnabled ? premoves : NO_PREMOVES;
+
+  // While premoves wait, the board shows the position they will leave, as if
+  // they had been played and Stockfish had not moved: the pieces stand on their
+  // upcoming squares, and the next premove is chosen from there.
+  const premoveBoard = useMemo(
+    () =>
+      canPremove && activePremoves.length > 0
+        ? applyPremoves(game, activePremoves, humanColor)
+        : null,
+    [game, canPremove, activePremoves, humanColor],
+  );
+  const premoveGame = premoveBoard?.game ?? game;
+  const shownPremoves = premoveBoard?.premoves ?? NO_PREMOVES;
+  const boardPosition = useMemo(
+    () => (premoveBoard ? toPosition(premoveBoard.game) : position),
+    [premoveBoard, position],
+  );
+
+  // A held piece takes over the hints. On Stockfish's turn the side to move is
+  // not the holder's, so chess.js reports no destinations of its own: with
+  // premoves on, the squares the piece could reach if it were the human's turn
+  // (on the board the queued premoves lead to) are offered instead.
+  const hintFrom = heldFrom ?? selected;
+  const destinations = useMemo(() => {
+    if (!hintFrom || isViewing) return NO_DESTINATIONS;
+    return canPremove
+      ? premoveDestinations(premoveGame, hintFrom, humanColor)
+      : getDestinations(game, hintFrom);
+  }, [game, premoveGame, hintFrom, isViewing, canPremove, humanColor]);
 
   const level = getLevel(setup.levelId);
   const timed = isTimed(setup.clock);
@@ -172,6 +211,7 @@ export default function Game() {
     setDragCancelSignal((n) => n + 1);
     setPendingPromotion(null);
     setSelected(null);
+    setPremoves(NO_PREMOVES);
   }, []);
   const {
     clock,
@@ -272,6 +312,36 @@ export default function Game() {
     handleSaveStatus,
   );
 
+  // The engine has replied and it is the human's turn: play the first premove
+  // if it is still legal in the position that arose. If it is not, the whole
+  // queue is dropped (the later ones were chosen on a board that no longer
+  // exists). Otherwise the rest wait for Stockfish's next reply, minus any the
+  // reply has already made impossible.
+  useEffect(() => {
+    if (activePremoves.length === 0 || !canPlay) return;
+    const [first, ...rest] = activePremoves;
+    const san = resolvePremove(game, first);
+    if (!san) {
+      setPremoves(NO_PREMOVES);
+      return;
+    }
+    const next = replay([...moves, san]);
+    setPremoves(
+      next.isGameOver() ? NO_PREMOVES : keepPossiblePremoves(next, rest, humanColor),
+    );
+    commitMove(san, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePremoves, canPlay, game]);
+
+  // A game that ends (checkmate, draw, flag, resignation), or turning the
+  // setting off, leaves nothing to premove for: forget the queue so it cannot
+  // come back later.
+  useEffect(() => {
+    if (premoves.length > 0 && (!premoveEnabled || !playing || status.isOver)) {
+      setPremoves(NO_PREMOVES);
+    }
+  }, [premoves, premoveEnabled, playing, status.isOver]);
+
   function commitMove(san: string, animate = true) {
     const next = [...moves, san];
     if (animate) {
@@ -303,10 +373,28 @@ export default function Game() {
     setHeldFrom(square);
     // Selecting is for the human's own turn; while Stockfish thinks the piece
     // is only held.
-    setSelected(canPlay ? square : null);
+    setSelected(canPlay || canPremove ? square : null);
   }
 
   function tryMove(from: Square, to: Square, animate = true) {
+    if (canPremove) {
+      // Not played now: queued as a premove for when the engine has replied.
+      // `from` and `to` are squares of the board the queue leads to.
+      const queued = addPremove(game, activePremoves, { from, to }, humanColor);
+      if (queued) {
+        if (animate) {
+          // A click: the piece glides to its upcoming square. A dropped piece
+          // is already there.
+          slideId.current += 1;
+          setSlide({ id: slideId.current, moves: [{ from, to }] });
+        } else {
+          setSlide(null);
+        }
+        setPremoves(queued);
+        setSelected(null);
+      }
+      return;
+    }
     if (!canPlay) return;
     // A king dropped far along its rank, or on its own rook, means castling.
     // It is only tried when the drop is not already an ordinary legal move.
@@ -331,6 +419,19 @@ export default function Game() {
   }
 
   function handleSquareActivate(square: Square) {
+    if (canPremove) {
+      if (selected && destinations.has(square)) {
+        tryMove(selected, square);
+      } else if (premoveGame.get(square)?.color === humanColor) {
+        setSelected(selected === square ? null : square);
+      } else {
+        // A plain click anywhere else (an empty or enemy square) cancels every
+        // premove and drops the selection.
+        setSelected(null);
+        setPremoves(NO_PREMOVES);
+      }
+      return;
+    }
     if (!canPlay) return;
 
     if (selected && destinations.has(square)) {
@@ -374,6 +475,7 @@ export default function Game() {
     setMoves(moves.slice(0, undoLength));
     setViewPly(null);
     setSelected(null);
+    setPremoves(NO_PREMOVES);
     setPendingPromotion(null);
     setPgnNotice("");
     setResultDismissed(false);
@@ -388,6 +490,7 @@ export default function Game() {
     setMoves([]);
     setViewPly(null);
     setSelected(null);
+    setPremoves(NO_PREMOVES);
     setPendingPromotion(null);
     setConfirmingNewGame(false);
     setTimedOut(null);
@@ -408,6 +511,7 @@ export default function Game() {
     setResigned(humanColor);
     setPendingPromotion(null);
     setSelected(null);
+    setPremoves(NO_PREMOVES);
     setResultDismissed(false);
     stopClock();
   }
@@ -539,12 +643,16 @@ export default function Game() {
         />
         <div className="relative">
         <Chessboard
-          position={position}
+          position={boardPosition}
           orientation={humanColor}
-          turn={status.turn}
-          interactive={canPlay}
+          turn={canPremove ? humanColor : status.turn}
+          interactive={canPlay || canPremove}
           selected={
-            isViewing ? null : canPlay && heldFrom ? heldFrom : selected
+            isViewing
+              ? null
+              : (canPlay || canPremove) && heldFrom
+                ? heldFrom
+                : selected
           }
           destinations={destinations}
           onSquareActivate={handleSquareActivate}
@@ -552,6 +660,7 @@ export default function Game() {
           onPieceDrop={(from, to) => tryMove(from, to, false)}
           onClearSelection={() => setSelected(null)}
           lastMove={lastMove}
+          premoves={shownPremoves}
           holdColor={humanColor}
           holdEnabled={canHold}
           cancelDragSignal={dragCancelSignal}
@@ -564,6 +673,19 @@ export default function Game() {
           highlights={highlights}
           onHighlightsChange={setHighlights}
         />
+        {shownPremoves.length > 0 && (
+          // Same spot as the history pill below (the two never show together):
+          // the squares of the queue are tinted red, and this cancels them all.
+          <button
+            type="button"
+            onClick={() => setPremoves(NO_PREMOVES)}
+            className="absolute bottom-full left-1/2 z-20 -translate-x-1/2 translate-y-[5px] cursor-pointer whitespace-nowrap rounded-full bg-background/90 px-2.5 text-[11px] font-medium leading-4 text-foreground shadow-sm ring-1 ring-red-600/60 hover:bg-background"
+          >
+            {shownPremoves.length === 1
+              ? "Cancel premove"
+              : `Cancel ${shownPremoves.length} premoves`}
+          </button>
+        )}
         {isViewing && (
           // Sits on the board's top edge, in the gap above it, so it never
           // shifts the layout. The panel's banner already announces the cursor.
