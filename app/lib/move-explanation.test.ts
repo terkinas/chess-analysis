@@ -37,7 +37,13 @@ const cls = (
   quality: "brilliant" | "great" | "best" | "good" | "inaccuracy" | "mistake" | "blunder",
   centipawnLoss: number | null,
   reason: "centipawn-loss" | "mate-allowed" = "centipawn-loss",
-): MoveClassification => ({ status: "classified", quality, centipawnLoss, reason });
+): MoveClassification => ({
+  status: "classified",
+  quality,
+  centipawnLoss,
+  winLoss: centipawnLoss === null ? null : centipawnLoss / 20,
+  reason,
+});
 
 describe("score wording", () => {
   it("shows scores from the mover's side", () => {
@@ -75,7 +81,7 @@ describe("buildMoveExplanation", () => {
       after,
     });
     assert.ok(result);
-    assert.match(result.headline, /blunder.*3\.4 pawns/);
+    assert.match(result.headline, /blunder.*3\.4 pawns.*17% win chance/);
     const text = result.points.join(" ");
     assert.match(text, /from \+0\.4 to -3\.0/);
     assert.match(text, /Nf3 was better/);

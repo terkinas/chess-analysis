@@ -15,6 +15,7 @@ const loss = (quality: "best" | "excellent" | "good" | "inaccuracy" | "mistake" 
   status: "classified",
   quality,
   centipawnLoss: cp,
+  winLoss: cp / 20,
   reason: "centipawn-loss",
 });
 
@@ -43,12 +44,13 @@ describe("moveQualityLabel", () => {
 
   it("describes the loss in pawns", () => {
     assert.match(moveQualityLabel(done("A", loss("good", 73)), "A")!.description, /0\.73 pawns lost/);
+    assert.match(moveQualityLabel(done("A", loss("good", 80)), "A")!.description, /0\.80 pawns lost \(4\.0% win chance\)/);
     assert.match(moveQualityLabel(done("A", loss("best", 0)), "A")!.description, /no evaluation lost/);
   });
 
   it("explains mate-based results without a centipawn figure", () => {
     const label = moveQualityLabel(
-      done("A", { status: "classified", quality: "blunder", centipawnLoss: null, reason: "mate-lost" }),
+      done("A", { status: "classified", quality: "blunder", centipawnLoss: null, winLoss: null, reason: "mate-lost" }),
       "A",
     );
     assert.equal(label?.text, "Blunder");

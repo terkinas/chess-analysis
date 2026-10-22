@@ -3,8 +3,10 @@
 // accuracy and how many inaccuracies, mistakes and blunders they made.
 //
 // Accuracy uses win probability, not centipawns, so the same centipawn swing
-// costs more when the position was already decided. The win-percent curve and
-// the accuracy curve are the ones Lichess publishes. They are applied to the
+// costs less when the position was already decided. Move qualities are banded
+// on the same win-chance scale (see move-classification.ts), so a move's label
+// and its accuracy agree. The win-percent curve (win-percent.ts) and the
+// accuracy curve are the ones Lichess publishes. They are applied to the
 // depth-limited engine scores this app stores, so the numbers are a guide, not
 // a reproduction of Lichess's figures for the same game.
 
@@ -17,19 +19,11 @@ import {
 } from "./move-classification.ts";
 import { isNotable, type NotableQuality } from "./quality-style.ts";
 import type { WhiteScore } from "./uci-info.ts";
+import { MATE_AS_CENTIPAWNS, winPercent } from "./win-percent.ts";
+
+export { winPercent };
 
 type Color = "w" | "b";
-
-/**
- * Stands in for a forced mate when it is turned into a number. It is far
- * beyond any centipawn score, so the win percentage saturates at 0 or 100.
- */
-const MATE_AS_CENTIPAWNS = 10000;
-
-/** Win probability (0–100) for the side with `cp` centipawns. */
-export function winPercent(cp: number): number {
-  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
-}
 
 function centipawnsFor(score: PlayerScore): number {
   if (score.kind === "cp") return score.cp;

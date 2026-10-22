@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Chess } from "chess.js";
 import {
+  CLASSIFICATION_DEPTH,
+  CLASSIFICATION_LIMIT,
   classificationDetails,
   classificationScore,
   classificationScores,
@@ -71,6 +73,24 @@ function fakeEngine(
 }
 
 const context = moveContextAt(["e4", "e5"], 2)!;
+
+describe("CLASSIFICATION_LIMIT", () => {
+  it("judges moves at depth 12 with the two best lines", () => {
+    assert.equal(CLASSIFICATION_DEPTH, 12);
+    assert.deepEqual(CLASSIFICATION_LIMIT, { depth: 12, multiPv: 2 });
+  });
+
+  it("never shares a cache key with the quick automatic depth-8 analysis", () => {
+    assert.notEqual(
+      evaluationCacheKey("F", CLASSIFICATION_LIMIT),
+      evaluationCacheKey("F", { depth: 8 }),
+    );
+    assert.notEqual(
+      evaluationCacheKey("F", CLASSIFICATION_LIMIT),
+      evaluationCacheKey("F", { depth: 8, multiPv: 2 }),
+    );
+  });
+});
 
 describe("classificationScore", () => {
   it("only accepts an evaluation made at exactly the classification limit", () => {

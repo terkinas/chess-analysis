@@ -24,6 +24,25 @@ import type {
 import { toWhiteScore, turnFromFen, type WhiteScore } from "./uci-info.ts";
 import type { PositionEvaluation } from "./use-position-analysis.ts";
 
+/**
+ * The search depth both sides of a move are judged at. Deeper than the quick
+ * automatic analysis (depth 8), which was too noisy to judge moves by: against
+ * a depth-18 reference, depth 12 agrees on the label far more often and rarely
+ * misses by two bands or more, for roughly a dozen seconds per 80-ply game on
+ * one core.
+ */
+export const CLASSIFICATION_DEPTH = 12;
+
+/**
+ * The one search limit both sides of a move are judged at, with the two best
+ * lines (for "great"). Evaluations made at any other limit, including the
+ * shallower automatic ones, are neither used nor compared.
+ */
+export const CLASSIFICATION_LIMIT: SearchLimit = {
+  depth: CLASSIFICATION_DEPTH,
+  multiPv: 2,
+};
+
 /** What the search needs from an engine; `StockfishEngine` fits. */
 export type SearchEngine = {
   getStatus(): EngineStatus;

@@ -106,7 +106,7 @@ export function buildMoveExplanation({
   after,
 }: Input): MoveExplanation | null {
   if (!classification || classification.status !== "classified") return null;
-  const { quality, centipawnLoss, reason } = classification;
+  const { quality, centipawnLoss, winLoss, reason } = classification;
   const { san, mover } = context;
   const name = colorName(mover);
   const opponent = colorName(mover === "w" ? "b" : "w");
@@ -162,7 +162,9 @@ export function buildMoveExplanation({
           : "an inaccuracy";
     headline =
       centipawnLoss !== null
-        ? `${san} is ${what}: it costs ${name} about ${pawns(centipawnLoss)} pawns of evaluation.`
+        ? `${san} is ${what}: it costs ${name} about ${pawns(centipawnLoss)} pawns of evaluation${
+            winLoss !== null ? ` (${Math.round(winLoss)}% win chance)` : ""
+          }.`
         : `${san} is ${what}.`;
     if (mateSentence) points.push(mateSentence);
     if (swing) points.push(swing);

@@ -40,7 +40,7 @@ type Options = {
 
 /**
  * Judges every move of the shown line by searching the positions on either
- * side of each one, at the same shallow limit as the single-move classification.
+ * side of each one, at the same limit as the single-move classification (`CLASSIFICATION_LIMIT`).
  *
  * Nothing is searched until `start` is called. After that, the search follows
  * the line: when moves are added or the line changes, the new moves are judged

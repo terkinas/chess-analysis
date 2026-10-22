@@ -1,6 +1,10 @@
 // Pure move-quality classification. No React, no worker, no chess.js: it only
 // compares two engine scores, so it can be tested on its own.
 //
+// A move is banded by the WIN CHANCE the mover gave up (see win-percent.ts), not
+// by raw centipawns: 1.0 pawn matters a lot in an equal position and almost
+// nothing at +10. The centipawn loss is still reported, for display.
+//
 // The engine scores handed to the analysis are from White's point of view (see
 // `toWhiteScore` in uci-info.ts). A move is judged from the point of view of the
 // player who made it, so both scores are first converted with `scoreForPlayer`
@@ -11,6 +15,7 @@
 // result is "unavailable" instead.
 
 import type { WhiteScore } from "./uci-info.ts";
+import { MATE_AS_CENTIPAWNS, winPercent } from "./win-percent.ts";
 
 type Color = "w" | "b";
 
@@ -24,33 +29,45 @@ export type MoveQuality =
   | "mistake"
   | "blunder";
 
-/** One band: a move that loses at most `maxLoss` centipawns has this quality. */
+/** One band: a move that loses at most `maxLoss` win-chance points has this quality. */
 export type QualityThreshold = {
   quality: Exclude<MoveQuality, "blunder" | "great" | "brilliant">;
-  /** Inclusive upper bound, in centipawns lost. */
+  /** Inclusive upper bound, in win-chance points lost (0–100). */
   maxLoss: number;
 };
 
 /**
- * The one place the centipawn-loss bands are defined, in ascending order.
+ * The one place the win-chance-loss bands are defined, in ascending order.
  * Anything above the last band is a blunder:
- *   best        0–10    excellent  11–25    good      26–50
- *   inaccuracy 51–100   mistake   101–200   blunder  > 200
+ *   best        0–1     excellent  1–2.5    good      2.5–5
+ *   inaccuracy  5–10    mistake   10–20     blunder  > 20
+ * In an equal position these are about 11 / 27 / 55 / 110 / 230 centipawns; the
+ * same win-chance loss takes many more centipawns in a lopsided position.
  */
 export const CLASSIFICATION_THRESHOLDS: readonly QualityThreshold[] = [
-  { quality: "best", maxLoss: 10 },
-  { quality: "excellent", maxLoss: 25 },
-  { quality: "good", maxLoss: 50 },
-  { quality: "inaccuracy", maxLoss: 100 },
-  { quality: "mistake", maxLoss: 200 },
+  { quality: "best", maxLoss: 1 },
+  { quality: "excellent", maxLoss: 2.5 },
+  { quality: "good", maxLoss: 5 },
+  { quality: "inaccuracy", maxLoss: 10 },
+  { quality: "mistake", maxLoss: 20 },
 ];
 
 /**
- * How much better (in centipawns, for the mover) the best move must be than the
- * second-best one for it to count as "great": the only move that keeps the
- * position. Compared on the same search as the played move.
+ * How much better (in win-chance points, for the mover) the best move must be
+ * than the second-best one for it to count as "great": the only move that keeps
+ * the position. Compared on the same search as the played move. Measured in win
+ * chance so a gap inside an already decided position (+11 against +8) does not
+ * count.
  */
-export const GREAT_GAP_CP = 200;
+export const GREAT_GAP_WIN = 15;
+
+/**
+ * A sacrifice is only "brilliant" if the mover was not already clearly winning
+ * (about +3.0, a 75% win chance): giving material in a won position is not
+ * brave. After it the mover must be at least level (50%).
+ */
+export const BRILLIANT_MAX_WIN_BEFORE = 75;
+export const BRILLIANT_MIN_WIN_AFTER = 50;
 
 /**
  * Quality given to a move that makes a forced mate against the mover come
@@ -92,6 +109,11 @@ export type MoveClassification =
        * is not a centipawn value.
        */
       centipawnLoss: number | null;
+      /**
+       * Win-chance points (0–100) the mover lost, never negative: what the
+       * quality is banded by. Null when a mate score is involved.
+       */
+      winLoss: number | null;
       reason: ClassificationReason;
     }
   | { status: "unavailable"; reason: UnavailableReason };
@@ -142,8 +164,8 @@ export function scoreForPlayer(score: WhiteScore, player: Color): PlayerScore {
   };
 }
 
-/** The quality for a centipawn loss, using `thresholds` (default: the shared bands). */
-export function classifyCentipawnLoss(
+/** The quality for a win-chance loss, using `thresholds` (default: the shared bands). */
+export function classifyWinLoss(
   loss: number,
   thresholds: readonly QualityThreshold[] = CLASSIFICATION_THRESHOLDS,
 ): MoveQuality {
@@ -175,29 +197,31 @@ export type ClassifyMoveInput = {
   sacrificed?: boolean;
 };
 
-/** A score as centipawns for `score`'s side, mates counted as far beyond any cp. */
-function cpOf(score: PlayerScore): number {
-  if (score.kind === "cp") return score.cp;
-  return score.winning ? MATE_AS_CP : -MATE_AS_CP;
+/** A score as the mover's win chance (0–100); a mate saturates at 0 or 100. */
+function winOf(score: PlayerScore): number {
+  if (score.kind === "cp") return winPercent(score.cp);
+  return winPercent(score.winning ? MATE_AS_CENTIPAWNS : -MATE_AS_CENTIPAWNS);
 }
-const MATE_AS_CP = 10000;
 
 const classified = (
   quality: MoveQuality,
   centipawnLoss: number | null,
+  winLoss: number | null,
   reason: ClassificationReason,
 ): MoveClassification => ({
   status: "classified",
   quality,
   centipawnLoss,
+  winLoss,
   reason,
 });
 
 /**
  * Judges one move from the mover's point of view.
  *
- * - Two centipawn scores: loss = what the mover had minus what they have now,
- *   floored at 0, banded by the thresholds.
+ * - Two centipawn scores: the loss is the win chance the mover had minus what
+ *   they have now, floored at 0, banded by the thresholds. The centipawn loss is
+ *   reported alongside but does not decide the band.
  * - Mate scores are never turned into centipawns. Reaching, delivering or
  *   keeping a forced mate for the mover is "best"; losing one, or allowing one
  *   against the mover, is a "blunder"; escaping a mate against the mover is
@@ -233,44 +257,52 @@ export function classifyMove({
 
   if (was.kind === "cp" && now.kind === "cp") {
     const loss = Math.max(0, was.cp - now.cp);
-    const quality = classifyCentipawnLoss(loss, thresholds);
+    const winBefore = winOf(was);
+    const winAfter = winOf(now);
+    const winLoss = Math.max(0, winBefore - winAfter);
+    const quality = classifyWinLoss(winLoss, thresholds);
     if (quality === "best") {
-      // A sacrifice the engine's best line keeps good for the mover.
-      if (sacrificed && now.cp >= 0) {
-        return classified("brilliant", loss, "centipawn-loss");
+      // A sacrifice the engine's best line keeps good for the mover, made from
+      // a position that was not already won.
+      if (
+        sacrificed &&
+        winAfter >= BRILLIANT_MIN_WIN_AFTER &&
+        winBefore <= BRILLIANT_MAX_WIN_BEFORE
+      ) {
+        return classified("brilliant", loss, winLoss, "centipawn-loss");
       }
       // The best move is far ahead of the best alternative.
       if (
         secondBest !== null &&
         isValidWhiteScore(secondBest) &&
-        cpOf(was) - cpOf(scoreForPlayer(secondBest, mover)) >= GREAT_GAP_CP
+        winBefore - winOf(scoreForPlayer(secondBest, mover)) >= GREAT_GAP_WIN
       ) {
-        return classified("great", loss, "centipawn-loss");
+        return classified("great", loss, winLoss, "centipawn-loss");
       }
     }
-    return classified(quality, loss, "centipawn-loss");
+    return classified(quality, loss, winLoss, "centipawn-loss");
   }
 
   if (now.kind === "mate" && now.winning) {
     // Delivered, reached or kept a forced mate; also escaping into one.
-    return classified("best", null, "mate-delivered");
+    return classified("best", null, null, "mate-delivered");
   }
 
   if (was.kind === "mate" && was.winning) {
     // Had a forced mate; the move no longer has one (now is cp or mated).
-    return classified("blunder", null, "mate-lost");
+    return classified("blunder", null, null, "mate-lost");
   }
 
   if (was.kind === "cp") {
     // Now being mated, from a position with no forced mate against.
-    return classified("blunder", null, "mate-allowed");
+    return classified("blunder", null, null, "mate-allowed");
   }
 
   // Was being mated.
-  if (now.kind === "cp") return classified("best", null, "mate-escaped");
+  if (now.kind === "cp") return classified("best", null, null, "mate-escaped");
   // Still being mated. `moves` counts the winner's moves, so a stronger
   // defence keeps it equal and a weaker one makes it smaller.
   return now.moves < was.moves
-    ? classified(MATE_HASTENED_QUALITY, null, "mate-hastened")
-    : classified("best", null, "mate-unchanged");
+    ? classified(MATE_HASTENED_QUALITY, null, null, "mate-hastened")
+    : classified("best", null, null, "mate-unchanged");
 }

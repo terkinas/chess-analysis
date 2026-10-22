@@ -134,7 +134,11 @@ export function moveQualityLabel(
     result.centipawnLoss !== null
       ? result.centipawnLoss === 0
         ? "no evaluation lost"
-        : `${pawns(result.centipawnLoss)} pawns lost`
+        : `${pawns(result.centipawnLoss)} pawns lost${
+            result.winLoss !== null
+              ? ` (${result.winLoss.toFixed(1)}% win chance)`
+              : ""
+          }`
       : REASON_TEXT[result.reason];
   return {
     text,

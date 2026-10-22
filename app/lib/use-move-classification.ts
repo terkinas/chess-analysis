@@ -2,31 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CLASSIFICATION_LIMIT,
   classificationDetails,
   ensureEvaluations,
 } from "./classification-search";
 import { classifyMove, type MoveClassification } from "./move-classification";
 import type { MoveContext } from "./move-context";
 import type { MoveClassificationStatus } from "./move-quality-label";
-import {
-  EngineCancelledError,
-  StockfishEngine,
-  type SearchLimit,
-} from "./stockfish-engine";
+import { EngineCancelledError, StockfishEngine } from "./stockfish-engine";
 import type { EvaluationStore } from "./use-evaluation-cache";
-import { AUTO_ANALYSIS_LIMIT } from "./use-position-analysis";
 
 export type { MoveClassificationStatus } from "./move-quality-label";
 
-/**
- * The one search limit both sides of a move are judged at: the same shallow,
- * fast limit as automatic analysis (reused, not changed). Evaluations made at
- * any other limit are neither used nor compared.
- */
-export const CLASSIFICATION_LIMIT: SearchLimit = {
-  ...AUTO_ANALYSIS_LIMIT,
-  multiPv: 2,
-};
+export { CLASSIFICATION_LIMIT };
 
 type Options = {
   /** The move to classify (see `moveContextAt`), or null for none. */
